@@ -48,7 +48,7 @@ export interface SourceDocument {
   description: string;
 }
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 /** The only error text ever shown to a user for a failure on our end —
  * network failure, backend down, anything the backend itself couldn't name
@@ -67,6 +67,39 @@ export class ApiError extends Error {
   }
 }
 
+/** Identifiant anonyme et aleatoire du navigateur, envoye avec chaque
+ * question pour compter les utilisateurs uniques dans le tableau de bord
+ * admin. Aucune donnee personnelle : un simple UUID garde en local. */
+function clientId(): string | undefined {
+  try {
+    const KEY = "ansd-rag:client-id";
+    let id = localStorage.getItem(KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Contexte d'usage joint aux appels (statistiques du tableau de bord). */
+export interface UsageContext {
+  /** Discussion a laquelle appartient l'appel. */
+  sessionId?: string;
+  /** Question posee a l'ecrit ou a voix haute. */
+  mode?: "text" | "voice";
+}
+
+function jsonHeaders(ctx?: UsageContext): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const id = clientId();
+  if (id) headers["X-Client-Id"] = id;
+  if (ctx?.sessionId) headers["X-Session-Id"] = ctx.sessionId;
+  return headers;
+}
+
 async function readErrorDetail(res: Response): Promise<string> {
   try {
     const body = await res.json();
@@ -77,13 +110,13 @@ async function readErrorDetail(res: Response): Promise<string> {
   return GENERIC_ERROR_MESSAGE;
 }
 
-export async function askQuestion(question: string, language: Language): Promise<QueryResponse> {
+export async function askQuestion(question: string, language: Language, ctx?: UsageContext): Promise<QueryResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/query`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, language }),
+      headers: jsonHeaders(ctx),
+      body: JSON.stringify({ question, language, mode: ctx?.mode ?? "text" }),
     });
   } catch {
     throw new ApiError(GENERIC_ERROR_MESSAGE);
@@ -92,6 +125,57 @@ export async function askQuestion(question: string, language: Language): Promise
     throw new ApiError(await readErrorDetail(res), res.status);
   }
   return res.json();
+}
+
+/** Explication detaillee d'une reponse deja donnee (bouton « Voir plus »),
+ * generee a la demande par le backend a partir des memes documents. */
+export async function explainAnswer(
+  question: string,
+  answer: string,
+  language: Language,
+  ctx?: UsageContext
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/explain`, {
+      method: "POST",
+      headers: jsonHeaders(ctx),
+      body: JSON.stringify({ question, answer, language }),
+    });
+  } catch {
+    throw new ApiError(GENERIC_ERROR_MESSAGE);
+  }
+  if (!res.ok) {
+    throw new ApiError(await readErrorDetail(res), res.status);
+  }
+  const body = await res.json();
+  return body.details as string;
+}
+
+/** Signale un clic utile au tableau de bord admin (« Voir plus » deplie,
+ * « Écouter »). Sans effet visible : un echec est simplement ignore. */
+export function trackEvent(event: "details_open" | "listen", ctx?: UsageContext): void {
+  void fetch(`${API_BASE_URL}/api/track`, {
+    method: "POST",
+    headers: jsonHeaders(ctx),
+    body: JSON.stringify({ event }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/** Titre court (1 a 3 mots) d'une discussion, genere par le backend pour
+ * l'historique — ex. « Espérance de vie ». */
+export async function suggestTitle(question: string, ctx?: UsageContext): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/title`, {
+    method: "POST",
+    headers: jsonHeaders(ctx),
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    throw new ApiError(await readErrorDetail(res), res.status);
+  }
+  const body = await res.json();
+  return body.title as string;
 }
 
 export async function fetchSources(): Promise<SourceDocument[]> {

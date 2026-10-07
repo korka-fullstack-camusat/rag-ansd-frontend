@@ -119,7 +119,7 @@ export default function VocalPage() {
     setResponse(null);
     setErrorMessage(null);
     try {
-      const res = await askQuestion(text, "wo");
+      const res = await askQuestion(text, "wo", { mode: "voice" });
       setResponse(res);
       setPhase("done");
       void playAnswer(res.answer);

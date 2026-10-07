@@ -2,114 +2,240 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { FileStack, Loader2, Pause, ShieldCheck, Volume2 } from "lucide-react";
+import { ChevronDown, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2 } from "lucide-react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
 import { CitationCard } from "@/components/chat/CitationCard";
 import { TracePanel } from "@/components/chat/TracePanel";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { HeroTitle } from "@/components/chat/HeroTitle";
+import { RichText } from "@/components/chat/RichText";
+import { cn } from "@/lib/utils";
+import { SessionSidebar } from "@/components/chat/SessionSidebar";
+import { VoiceButton } from "@/components/chat/VoiceButton";
 import { LANG_TO_API, type Lang } from "@/lib/languages";
 import {
   ApiError,
   askQuestion,
+  explainAnswer,
   fetchSources,
+  trackEvent,
+  suggestTitle,
   GENERIC_ERROR_MESSAGE,
   type Citation,
-  type QueryResponse,
+  type Language,
   type SourceDocument,
 } from "@/lib/api";
-import { captureVoice, speakText, type CaptureController, type SpeechController, type VoiceLanguage } from "@/lib/voice";
+import {
+  captureVoice,
+  isVoiceInputAvailable,
+  speakText,
+  VOICE_INPUT_UNAVAILABLE_MESSAGE,
+  type CaptureController,
+  type SpeechController,
+  type VoiceLanguage,
+} from "@/lib/voice";
+import { loadSessions, quickTitle, saveSessions, type ChatMode, type ChatSession, type Turn } from "@/lib/sessions";
 
-const SUGGESTIONS = [
-  "Quel est le taux de chômage des jeunes à Kaolack ?",
-  "Comment la pauvreté a-t-elle évolué depuis 2018 ?",
-  "Quelle est l'espérance de vie en 2023 ?",
-  "Combien d'habitants compte le Sénégal ?",
-];
-
-// Repères chiffrés d'en-tête : chiffres de communication institutionnelle
-// (RGPH-5, catalogue ANADS), pas des réponses RAG — pas d'endpoint pour
-// ceux-ci, contrairement au bloc de périmètre juste à côté.
-const STATS = [
-  { value: "18 126 390", label: "habitants (RGPH-5, 2023)" },
-  { value: "107", label: "opérations archivées (ANADS)" },
-  { value: "62,9 %", label: "savent lire et écrire" },
-];
-
-
-type TurnStatus = "recording" | "transcribing" | "loading" | "done" | "error";
-
-interface Turn {
-  id: string;
-  /** Transcript (or typed text) once known — empty while still "recording". */
-  question: string;
-  status: TurnStatus;
-  /** Playable clip of the user's own voice, set as soon as recording stops
-   * — shown immediately, before the transcript/answer exist. Only present
-   * for mic-originated turns. */
-  audioUrl?: string;
-  response?: QueryResponse;
-  error?: string;
-}
+/** Titre provisoire d'une discussion lancee au micro, remplace par la
+ * transcription des qu'elle arrive. */
+const VOICE_TITLE = "Question vocale";
 
 export default function AccueilPage() {
   const [lang, setLang] = useState<Lang>("FR");
   const [input, setInput] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  // Discussions (voir lib/sessions.ts) : enregistrees dans le navigateur a
+  // chaque changement, rechargees au montage. `activeId === null` = accueil
+  // vide (nouvelle discussion), la session n'est creee qu'a la 1re question.
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sources, setSources] = useState<SourceDocument[] | null>(null);
-  const [sourcesError, setSourcesError] = useState<string | null>(null);
   const [trace, setTrace] = useState<{ question: string; citation: Citation } | null>(null);
   const [speaking, setSpeaking] = useState<{ turnId: string; status: "loading" | "playing" | "paused" } | null>(
     null
   );
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
+  // Mode choisi sur l'accueil, avant la 1re question (null = pas encore
+  // choisi : on s'adaptera a ce que l'utilisateur commence a faire).
+  const [heroMode, setHeroMode] = useState<ChatMode | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const heroInputRef = useRef<HTMLInputElement>(null);
+  // « Voir plus » : echanges deplies, en cours de chargement, ou en erreur.
+  // Le texte detaille lui-meme est stocke dans l'echange (turn.details).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [detailsLoading, setDetailsLoading] = useState<Set<string>>(new Set());
+  const [detailsError, setDetailsError] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const speechControllerRef = useRef<SpeechController | null>(null);
   const captureControllerRef = useRef<CaptureController | null>(null);
 
   useEffect(() => {
+    // Sert uniquement a enrichir les cartes de citation (editeur, date) ;
+    // en cas d'echec elles s'affichent simplement sans ces details.
     fetchSources()
       .then(setSources)
-      .catch((err) =>
-        setSourcesError(err instanceof ApiError ? err.message : "Périmètre des sources indisponible.")
-      );
+      .catch(() => setSources([]));
   }, []);
+
+  useEffect(() => {
+    const stored = loadSessions();
+    setSessions(stored.sessions);
+    setActiveId(stored.activeId);
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) saveSessions(sessions, activeId);
+  }, [sessions, activeId, hydrated]);
+
+  const activeSession = sessions.find((s) => s.id === activeId) ?? null;
+  const turns = activeSession?.turns ?? [];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns]);
 
-  const isBusy = turns.some((t) => t.status === "loading" || t.status === "recording" || t.status === "transcribing");
+  const isBusy =
+    listening || turns.some((t) => t.status === "loading" || t.status === "recording" || t.status === "transcribing");
 
-  async function runQuery(id: string, question: string) {
-    try {
-      const response = await askQuestion(question, LANG_TO_API[lang]);
-      setTurns((t) => t.map((turn) => (turn.id === id ? { ...turn, status: "done", response } : turn)));
-    } catch (err) {
-      setTurns((t) =>
-        t.map((turn) =>
-          turn.id === id
-            ? {
-                ...turn,
-                status: "error",
-                error: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE,
-              }
-            : turn
-        )
+  /** Met a jour un echange d'une session donnee — pas forcement la session
+   * affichee : une reponse qui arrive apres un changement de discussion
+   * atterrit bien dans celle ou la question a ete posee. */
+  function patchTurn(sessionId: string, turnId: string, patch: Partial<Turn>) {
+    setSessions((all) =>
+      all.map((s) =>
+        s.id !== sessionId
+          ? s
+          : { ...s, updatedAt: Date.now(), turns: s.turns.map((t) => (t.id === turnId ? { ...t, ...patch } : t)) }
+      )
+    );
+  }
+
+  /** Remplace le titre provisoire d'une discussion par le titre court du
+   * backend (1 a 3 mots). En cas d'echec, le titre provisoire reste. */
+  function refineTitle(sessionId: string, question: string) {
+    suggestTitle(question, { sessionId })
+      .then((title) => setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, title } : s))))
+      .catch(() => {});
+  }
+
+  /** Ajoute un echange a la discussion affichee, ou cree la discussion si
+   * l'on est sur l'accueil vide. Renvoie l'id de la session concernee. */
+  function startTurn(turn: Turn): string {
+    const now = Date.now();
+    if (activeSession) {
+      const sessionId = activeSession.id;
+      setSessions((all) =>
+        all.map((s) => (s.id === sessionId ? { ...s, updatedAt: now, turns: [...s.turns, turn] } : s))
       );
+      return sessionId;
+    }
+    const sessionId = crypto.randomUUID();
+    const session: ChatSession = {
+      id: sessionId,
+      title: turn.question ? quickTitle(turn.question) : VOICE_TITLE,
+      createdAt: now,
+      updatedAt: now,
+      mode: turn.origin ?? "text",
+      turns: [turn],
+    };
+    setSessions((all) => [session, ...all]);
+    setActiveId(sessionId);
+    if (turn.question) refineTitle(sessionId, turn.question);
+    return sessionId;
+  }
+
+  /** `origin` : une question posee a voix haute recoit une reponse lue
+   * automatiquement ; une question ecrite, une reponse ecrite (avec le
+   * bouton « Écouter »). */
+  async function runQuery(sessionId: string, turnId: string, question: string, origin: ChatMode = "text") {
+    try {
+      const response = await askQuestion(question, LANG_TO_API[lang], { sessionId, mode: origin });
+      patchTurn(sessionId, turnId, { status: "done", response });
+      if (origin === "voice") void handleListen(turnId, response.answer, response.language as VoiceLanguage);
+      if (response.answered) void loadDetails(sessionId, turnId, question, response.answer, response.language);
+    } catch (err) {
+      patchTurn(sessionId, turnId, {
+        status: "error",
+        error: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE,
+      });
     }
   }
 
   async function handleAsk(question: string) {
     const trimmed = question.trim();
     if (!trimmed || isBusy) return;
-    const id = crypto.randomUUID();
-    setTurns((t) => [...t, { id, question: trimmed, status: "loading" }]);
+    const turnId = crypto.randomUUID();
+    const sessionId = startTurn({ id: turnId, question: trimmed, status: "loading", origin: "text" });
     setInput("");
-    void runQuery(id, trimmed);
+    void runQuery(sessionId, turnId, trimmed, "text");
+  }
+
+  /** Prepare l'explication detaillee (« Voir plus ») en arriere-plan, des
+   * que la reponse courte est arrivee : au clic, elle est le plus souvent
+   * deja la, sans attente. Le resultat est stocke dans l'echange. */
+  async function loadDetails(sessionId: string, turnId: string, question: string, answer: string, language: string) {
+    setDetailsLoading((set) => new Set(set).add(turnId));
+    setDetailsError(({ [turnId]: _old, ...rest }) => rest);
+    try {
+      const details = await explainAnswer(question, answer, language as Language, { sessionId });
+      patchTurn(sessionId, turnId, { details });
+    } catch (err) {
+      setDetailsError((e) => ({ ...e, [turnId]: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE }));
+    } finally {
+      setDetailsLoading((set) => {
+        const next = new Set(set);
+        next.delete(turnId);
+        return next;
+      });
+    }
+  }
+
+  /** « Voir plus » / « Voir moins » : deplie tout de suite (le texte, ou un
+   * squelette s'il est encore en preparation) ; relance la preparation si
+   * elle n'a pas eu lieu (ancienne discussion) ou a echoue. */
+  function handleToggleDetails(turn: Turn) {
+    if (!activeSession || !turn.response) return;
+    const turnId = turn.id;
+    const open = !expanded.has(turnId);
+    setExpanded((set) => {
+      const next = new Set(set);
+      if (open) next.add(turnId);
+      else next.delete(turnId);
+      return next;
+    });
+    if (open) trackEvent("details_open", { sessionId: activeSession.id });
+    if (open && !turn.details && !detailsLoading.has(turnId)) {
+      void loadDetails(activeSession.id, turnId, turn.question, turn.response.answer, turn.response.language);
+    }
+  }
+
+  /** Repose une question restee sans reponse (erreur, ou page quittee
+   * pendant l'attente). */
+  function handleRetry(turn: Turn) {
+    if (!activeSession || isBusy || !turn.question) return;
+    patchTurn(activeSession.id, turn.id, { status: "loading", error: undefined, interrupted: false });
+    void runQuery(activeSession.id, turn.id, turn.question, turn.origin ?? "text");
+  }
+
+  /** Change le mode de la discussion affichee (« Écrire plutôt » / micro). */
+  function setSessionMode(mode: ChatMode) {
+    if (!activeSession) return;
+    const sessionId = activeSession.id;
+    setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, mode } : s)));
+  }
+
+  /** Choix du mode sur l'accueil. « Parler » lance directement l'ecoute. */
+  function chooseHeroMode(mode: ChatMode) {
+    setHeroMode(mode);
+    setVoiceNotice(null);
+    if (mode === "voice") void handleMicClick();
+    else setTimeout(() => heroInputRef.current?.focus(), 0);
   }
 
   /** Pressing the mic drops straight into the conversation view — a
@@ -127,45 +253,91 @@ export default function AccueilPage() {
       return;
     }
     if (isBusy) return;
+    if (!isVoiceInputAvailable(LANG_TO_API[lang])) {
+      setVoiceNotice(VOICE_INPUT_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    setVoiceNotice(null);
+    // Couper une lecture en cours : sinon le micro capterait la voix de l'assistant.
+    speechControllerRef.current?.cancel();
+    setSpeaking(null);
+    // Commencer a parler fait passer la discussion en mode vocal.
+    if (activeSession && activeSession.mode !== "voice") setSessionMode("voice");
     const id = crypto.randomUUID();
-    setTurns((t) => [...t, { id, question: "", status: "recording" }]);
+    // Discussion creee par cette question vocale : son titre provisoire
+    // (VOICE_TITLE) sera remplace des que la transcription arrive.
+    const createsSession = !activeSession;
+    const sessionId = startTurn({ id, question: "", status: "recording", origin: "voice" });
 
     captureControllerRef.current = await captureVoice(LANG_TO_API[lang], {
       onStart: () => setListening(true),
       onRecorded: (blob) => {
         const url = URL.createObjectURL(blob);
-        setTurns((t) =>
-          t.map((turn) =>
-            turn.id === id
-              ? { ...turn, audioUrl: url, status: turn.status === "recording" ? "transcribing" : turn.status }
-              : turn
+        setSessions((all) =>
+          all.map((s) =>
+            s.id !== sessionId
+              ? s
+              : {
+                  ...s,
+                  turns: s.turns.map((turn) =>
+                    turn.id === id
+                      ? { ...turn, audioUrl: url, status: turn.status === "recording" ? "transcribing" : turn.status }
+                      : turn
+                  ),
+                }
           )
         );
       },
+      onPartial: (text) => patchTurn(sessionId, id, { question: text }),
       onResult: (text) => {
-        setTurns((t) => t.map((turn) => (turn.id === id ? { ...turn, question: text, status: "loading" } : turn)));
-        void runQuery(id, text);
+        patchTurn(sessionId, id, { question: text, status: "loading" });
+        if (createsSession) {
+          setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, title: quickTitle(text) } : s)));
+          refineTitle(sessionId, text);
+        }
+        void runQuery(sessionId, id, text, "voice");
       },
       onError: (message) => {
-        setTurns((t) => t.map((turn) => (turn.id === id ? { ...turn, status: "error", error: message } : turn)));
+        patchTurn(sessionId, id, { status: "error", error: message });
       },
       onEnd: () => setListening(false),
     });
   }
 
-  function resetConversation() {
-    // Blocked while a transcript or answer is genuinely in flight, but an
-    // active *recording* is fine to interrupt — stopped below — since
-    // that's a plausible "I changed my mind" moment, not a pending request.
-    if (turns.some((t) => t.status === "transcribing" || t.status === "loading")) return;
-    captureControllerRef.current?.stop();
+  /** Quitte la discussion affichee (sans la perdre : elle reste dans
+   * l'historique, et une reponse encore en attente y arrivera quand meme). */
+  function leaveConversation() {
+    if (listening) captureControllerRef.current?.stop();
     speechControllerRef.current?.cancel();
     setSpeaking(null);
-    turns.forEach((t) => t.audioUrl && URL.revokeObjectURL(t.audioUrl));
-    setTurns([]);
     setInput("");
     setTrace(null);
   }
+
+  function handleNewChat() {
+    leaveConversation();
+    setActiveId(null);
+    setHeroMode(null);
+    setVoiceNotice(null);
+  }
+
+  function handleSelectSession(id: string) {
+    if (id === activeId) return;
+    leaveConversation();
+    setActiveId(id);
+  }
+
+  function handleDeleteSession(id: string) {
+    setSessions((all) => all.filter((s) => s.id !== id));
+    if (id === activeId) handleNewChat();
+  }
+
+  function handleToggleSidebar() {
+    if (window.matchMedia("(min-width: 768px)").matches) setDesktopSidebarOpen((o) => !o);
+    else setMobileSidebarOpen(true);
+  }
+
+  const hasHistory = hydrated && sessions.length > 0;
 
   /** Reads an answer aloud — wolof via Soynade, fr/en via Mistral's Voxtral
    * TTS (see lib/voice.ts and backend/app/mistral_voice.py). Uses the
@@ -221,22 +393,42 @@ export default function AccueilPage() {
       <ChatHeader
         lang={lang}
         onLangChange={setLang}
-        onNewChat={resetConversation}
+        onNewChat={handleNewChat}
         showNewChat={turns.length > 0}
+        onToggleSidebar={hasHistory ? handleToggleSidebar : undefined}
+        sidebarOpen={hasHistory && desktopSidebarOpen}
       />
 
       <div className="flex min-h-0 min-w-0 flex-1">
+        {hasHistory && (
+          <SessionSidebar
+            sessions={sessions}
+            activeId={activeId}
+            onSelect={handleSelectSession}
+            onNew={handleNewChat}
+            onDelete={handleDeleteSession}
+            desktopOpen={desktopSidebarOpen}
+            mobileOpen={mobileSidebarOpen}
+            onMobileClose={() => setMobileSidebarOpen(false)}
+          />
+        )}
+
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {turns.length === 0 ? (
+          {!hydrated ? null : turns.length === 0 ? (
             // Defilable (et non `overflow-hidden` + `justify-center`, qui coupait le
             // haut du titre sur petit ecran) ; `my-auto` sur le contenu le garde
             // centre verticalement quand la place suffit.
             <div className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 py-8 sm:px-6 sm:py-10">
               {/* Fond dégradé décoratif — hors scope du brief institutionnel, assumé ici */}
-              <div className="pointer-events-none absolute -top-32 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-200/50 via-brand-100/40 to-transparent blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-40 -right-24 h-80 w-80 rounded-full bg-brand-100/60 blur-3xl" />
+              {/* Dans leur propre cadre `overflow-hidden` : debordant de la zone,
+                  ils l'elargissaient sinon, et la mise au point d'un champ la
+                  faisait defiler horizontalement (contenu decale a gauche). */}
+              <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+                <div className="absolute -top-32 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-200/50 via-brand-100/40 to-transparent blur-3xl" />
+                <div className="absolute -bottom-40 -right-24 h-80 w-80 rounded-full bg-brand-100/60 blur-3xl" />
+              </div>
 
-              <div className="relative z-10 mt-auto flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+              <div className="relative z-10 my-auto flex w-full max-w-2xl flex-col items-center gap-6 text-center">
                 <HeroTitle />
 
                 <motion.p
@@ -252,93 +444,95 @@ export default function AccueilPage() {
                   . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
                 </motion.p>
 
+                {/* Choix du mode de discussion. Sans choix, la zone de saisie
+                    ci-dessous reste utilisable : on s'adapte a ce que
+                    l'utilisateur commence (taper, ou toucher le micro). */}
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="w-full"
+                  transition={{ delay: 0.7 }}
+                  className="grid w-full grid-cols-2 gap-3"
+                  role="group"
+                  aria-label="Comment voulez-vous poser votre question ?"
                 >
-                  <Composer
-                    variant="hero"
-                    placeholder="Posez une question sur la population, l'emploi, les prix, l'éducation…"
-                    value={input}
-                    onChange={setInput}
-                    onSubmit={() => handleAsk(input)}
-                    listening={listening}
-                    onMicClick={handleMicClick}
-                    disabled={isBusy}
-                    autoFocus
-                  />
+                  {(
+                    [
+                      { mode: "text", icon: PenLine, label: "Écrire", hint: "Je tape ma question" },
+                      { mode: "voice", icon: Mic, label: "Parler", hint: "Je pose ma question à voix haute" },
+                    ] as const
+                  ).map(({ mode, icon: Icon, label, hint }) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => chooseHeroMode(mode)}
+                      aria-pressed={heroMode === mode}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-4 text-center shadow-sm transition-all sm:flex-row sm:gap-3 sm:px-5 sm:text-left",
+                        heroMode === mode
+                          ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200"
+                          : "border-slate-200 bg-white/80 hover:border-brand-300 hover:bg-brand-50/50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                          heroMode === mode ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600"
+                        )}
+                      >
+                        <Icon size={20} />
+                      </span>
+                      <span className="flex flex-col">
+                        <span className="text-[15px] font-bold text-brand-900">{label}</span>
+                        <span className="text-xs text-slate-500">{hint}</span>
+                      </span>
+                    </button>
+                  ))}
                 </motion.div>
 
                 <motion.div
-                  initial="hidden"
-                  animate="visible"
-                  variants={{ visible: { transition: { staggerChildren: 0.05, delayChildren: 0.2 } } }}
-                  className="flex flex-wrap items-center justify-center gap-2"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.8 }}
+                  className="w-full"
                 >
-                  {SUGGESTIONS.map((question) => (
-                    <motion.button
-                      key={question}
-                      variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      type="button"
+                  {heroMode === "voice" ? (
+                    <VoiceButton
+                      listening={listening}
                       disabled={isBusy}
-                      onClick={() => handleAsk(question)}
-                      className="rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-sm transition-colors hover:border-brand-300 hover:text-brand-700 disabled:opacity-50"
-                    >
-                      {question}
-                    </motion.button>
-                  ))}
+                      onClick={handleMicClick}
+                      onSwitchToText={() => chooseHeroMode("text")}
+                      notice={voiceNotice}
+                    />
+                  ) : (
+                    <>
+                      <Composer
+                        variant="hero"
+                        placeholder="Posez une question…"
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={() => handleAsk(input)}
+                        listening={listening}
+                        onMicClick={handleMicClick}
+                        disabled={isBusy}
+                        inputRef={heroInputRef}
+                      />
+                      {voiceNotice && <p className="mt-2 text-xs text-red-600">{voiceNotice}</p>}
+                    </>
+                  )}
                 </motion.div>
               </div>
-
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="relative z-10 mb-auto mt-12 flex w-full max-w-2xl flex-col items-center gap-3 border-t border-slate-100 pt-6"
-              >
-                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1.5">
-                  {STATS.map((stat) => (
-                    <span key={stat.label} className="text-xs text-slate-400">
-                      <span className="tabular-nums font-bold text-brand-800">{stat.value}</span>{" "}
-                      {stat.label}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
-                  <FileStack size={13} className="text-slate-400" />
-                  {sourcesError && <span className="text-xs text-slate-400">{sourcesError}</span>}
-                  {!sourcesError && sources === null && (
-                    <span className="text-xs text-slate-400">Chargement du périmètre…</span>
-                  )}
-                  {!sourcesError &&
-                    sources?.map((s) => (
-                      <span
-                        key={s.id}
-                        title={s.title}
-                        className="flex min-w-0 max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 sm:max-w-[280px]"
-                      >
-                        <span className="truncate">{s.title}</span>
-                        <span className="shrink-0 text-slate-400">— {s.publication_date.slice(0, 4)}</span>
-                      </span>
-                    ))}
-                </div>
-              </motion.div>
             </div>
           ) : (
             <>
               <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-8">
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
                   {turns.map((turn) => (
                     <div key={turn.id} className="flex flex-col gap-3">
                       <div className="flex justify-end">
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="flex max-w-[80%] flex-col items-end gap-1.5"
+                          className="flex max-w-[88%] flex-col items-end gap-1.5 sm:max-w-[80%]"
                         >
                           {/* The user's own recording — playable as soon as it stops,
                               typically before the transcript (and always before the
@@ -359,7 +553,7 @@ export default function AccueilPage() {
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
                               </span>
-                              Je vous écoute…
+                              {turn.question ? <span className="italic">{turn.question}</span> : "Je vous écoute…"}
                             </div>
                           ) : turn.status === "transcribing" ? (
                             <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
@@ -384,34 +578,66 @@ export default function AccueilPage() {
                         {turn.status === "loading" && <TypingIndicator />}
 
                         {turn.status === "error" && (
-                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                            {turn.error}
-                          </p>
+                          <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                            <p>{turn.error}</p>
+                            {turn.question && (
+                              <button
+                                type="button"
+                                onClick={() => handleRetry(turn)}
+                                disabled={isBusy}
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50"
+                              >
+                                <RotateCcw size={13} />
+                                Reposer la question
+                              </button>
+                            )}
+                          </div>
                         )}
 
-                        {turn.status === "done" && turn.response && (
+                        {turn.status === "done" && turn.response && !turn.response.answered && (
+                          // Donnees non couvertes par les publications indexees : un message simple, rien d'autre.
+                          <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] leading-relaxed text-slate-600">
+                            <Info size={18} className="mt-0.5 shrink-0 text-slate-400" />
+                            <p>{turn.response.answer}</p>
+                          </div>
+                        )}
+
+                        {turn.status === "done" && turn.response?.answered && (
                           <>
+                            <RichText
+                              text={turn.response.answer}
+                              className="font-serif text-[17px] leading-[1.7] text-slate-800"
+                            />
+
+                            {/* Barre d'actions, juste sous la reponse */}
                             <div className="flex flex-wrap items-center gap-2">
-                              {turn.response.citations.length > 0 &&
-                                turn.response.citations.every((c) => c.verified) && (
-                                  <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700">
-                                    <ShieldCheck size={13} />
-                                    Chiffres retrouvés mot pour mot dans les documents sources
-                                  </div>
-                                )}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDetails(turn)}
+                                aria-expanded={expanded.has(turn.id)}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-100"
+                              >
+                                {expanded.has(turn.id) ? "Voir moins" : "Voir plus"}
+                                <ChevronDown
+                                  size={16}
+                                  className={cn("transition-transform", expanded.has(turn.id) && "rotate-180")}
+                                />
+                              </button>
 
                               <button
                                 type="button"
-                                onClick={() =>
-                                  handleListen(turn.id, turn.response!.answer, turn.response!.language as VoiceLanguage)
-                                }
-                                className="inline-flex w-fit items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+                                onClick={() => {
+                                  if (speaking?.turnId !== turn.id) trackEvent("listen", { sessionId: activeSession?.id });
+                                  void handleListen(turn.id, turn.response!.answer, turn.response!.language as VoiceLanguage);
+                                }}
+                                aria-label="Écouter la réponse"
+                                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
                               >
                                 {(() => {
                                   const status = speaking?.turnId === turn.id ? speaking.status : null;
-                                  if (status === "loading") return <Loader2 size={13} className="animate-spin" />;
-                                  if (status === "playing") return <Pause size={13} />;
-                                  return <Volume2 size={13} />;
+                                  if (status === "loading") return <Loader2 size={16} className="animate-spin" />;
+                                  if (status === "playing") return <Pause size={16} />;
+                                  return <Volume2 size={16} />;
                                 })()}
                                 {(() => {
                                   const status = speaking?.turnId === turn.id ? speaking.status : null;
@@ -423,9 +649,45 @@ export default function AccueilPage() {
                               </button>
                             </div>
 
-                            <p className="whitespace-pre-wrap font-serif text-[17px] leading-[1.7] text-slate-800">
-                              {turn.response.answer}
-                            </p>
+                            <AnimatePresence initial={false}>
+                              {expanded.has(turn.id) && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: "auto" }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  transition={{ duration: 0.2, ease: "easeOut" }}
+                                  className="overflow-hidden"
+                                >
+                                  <div className="rounded-xl border-l-[3px] border-brand-300 bg-brand-50/50 px-4 py-3 text-[15px] leading-relaxed text-slate-700">
+                                    {turn.details ? (
+                                      <RichText text={turn.details} />
+                                    ) : detailsError[turn.id] && !detailsLoading.has(turn.id) ? (
+                                      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                                        {detailsError[turn.id]}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            activeSession &&
+                                            loadDetails(activeSession.id, turn.id, turn.question, turn.response!.answer, turn.response!.language)
+                                          }
+                                          className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-900"
+                                        >
+                                          <RotateCcw size={13} />
+                                          Réessayer
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex animate-pulse flex-col gap-2.5 py-1" aria-label="Chargement des détails">
+                                        <div className="h-3 w-11/12 rounded-full bg-brand-100" />
+                                        <div className="h-3 w-full rounded-full bg-brand-100" />
+                                        <div className="h-3 w-4/5 rounded-full bg-brand-100" />
+                                        <div className="h-3 w-2/3 rounded-full bg-brand-100" />
+                                      </div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
 
                             {turn.response.citations.length > 0 && (
                               <div className="flex flex-col gap-2">
@@ -447,18 +709,32 @@ export default function AccueilPage() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-xl">
-                <div className="mx-auto w-full max-w-5xl">
-                  <Composer
-                    variant="footer"
-                    placeholder="Posez une autre question"
-                    value={input}
-                    onChange={setInput}
-                    onSubmit={() => handleAsk(input)}
-                    listening={listening}
-                    onMicClick={handleMicClick}
-                    disabled={isBusy}
-                  />
+              <div className="shrink-0 border-t border-slate-100 bg-white/80 px-4 py-3 backdrop-blur-xl sm:px-6 sm:py-4">
+                <div className="mx-auto w-full max-w-3xl">
+                  {activeSession?.mode === "voice" ? (
+                    <VoiceButton
+                      size="compact"
+                      listening={listening}
+                      disabled={isBusy}
+                      onClick={handleMicClick}
+                      onSwitchToText={() => setSessionMode("text")}
+                      notice={voiceNotice}
+                    />
+                  ) : (
+                    <>
+                      <Composer
+                        variant="footer"
+                        placeholder="Posez une question…"
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={() => handleAsk(input)}
+                        listening={listening}
+                        onMicClick={handleMicClick}
+                        disabled={isBusy}
+                      />
+                      {voiceNotice && <p className="mt-1.5 px-1 text-xs font-medium text-red-600">{voiceNotice}</p>}
+                    </>
+                  )}
                   {speechError && <p className="mt-1.5 px-1 text-xs font-medium text-red-600">{speechError}</p>}
                 </div>
               </div>

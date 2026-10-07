@@ -66,7 +66,7 @@ export function TracePanel({
         exit={{ x: 32, opacity: 0 }}
         transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
         aria-label="Traçabilité de la citation"
-        className="flex h-full w-full max-w-sm shrink-0 flex-col border-l border-slate-200 bg-white/85 backdrop-blur-xl"
+        className="fixed inset-y-0 right-0 z-40 flex h-full w-full max-w-sm shrink-0 flex-col border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl lg:static lg:z-auto lg:bg-white/85 lg:shadow-none"
       >
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-5">
           <span className="text-sm font-bold text-brand-900">Traçabilité de la citation</span>

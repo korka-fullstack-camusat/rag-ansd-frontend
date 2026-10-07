@@ -24,6 +24,7 @@ export function Composer({
   onMicClick,
   disabled = false,
   autoFocus = false,
+  inputRef,
 }: {
   variant: "hero" | "footer";
   placeholder: string;
@@ -34,6 +35,7 @@ export function Composer({
   onMicClick: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const isHero = variant === "hero";
 
@@ -53,6 +55,7 @@ export function Composer({
         )}
       >
         <input
+          ref={inputRef}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}

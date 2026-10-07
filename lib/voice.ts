@@ -31,6 +31,9 @@ export interface CaptureHandlers {
    * finishes — lets the UI show a playable "your recording" bubble right
    * away instead of waiting on the transcribe round-trip. */
   onRecorded?: (blob: Blob) => void;
+  /** Transcription provisoire, au fil de la parole (reconnaissance du
+   * navigateur uniquement) — permet d'afficher ce qui est compris en direct. */
+  onPartial?: (text: string) => void;
   onResult: (text: string) => void;
   onError: (message: string) => void;
   /** Always fires last, on success or failure — the right place to reset a
@@ -40,6 +43,86 @@ export interface CaptureHandlers {
 
 export function isVoiceCaptureSupported(): boolean {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+}
+
+// Reconnaissance vocale du navigateur (Web Speech API) : Chrome, Edge et
+// Safari la proposent, pas Firefox. Le backend n'ayant pas (encore) de
+// transcription, c'est le chemin utilise pour le francais et l'anglais ;
+// les autres langues n'ont de modele de reconnaissance dans aucun navigateur.
+interface BrowserRecognition {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+const RECOGNITION_LANG: Partial<Record<VoiceLanguage, string>> = { fr: "fr-FR", en: "en-US" };
+
+function recognitionCtor(): (new () => BrowserRecognition) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as Record<string, unknown>;
+  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as (new () => BrowserRecognition) | null;
+}
+
+/** Vrai si l'on peut poser une question a voix haute dans cette langue sur
+ * ce navigateur. */
+export function isVoiceInputAvailable(language: VoiceLanguage): boolean {
+  return !!recognitionCtor() && !!RECOGNITION_LANG[language];
+}
+
+export const VOICE_INPUT_UNAVAILABLE_MESSAGE =
+  "La question à voix haute n'est pas encore disponible dans cette langue ou sur ce navigateur. Utilisez Chrome, Edge ou Safari, en français ou en anglais.";
+
+function captureWithBrowser(Ctor: new () => BrowserRecognition, bcp47: string, handlers: CaptureHandlers): CaptureController {
+  const rec = new Ctor();
+  rec.lang = bcp47;
+  rec.interimResults = true;
+  rec.continuous = false; // s'arrete tout seul apres un silence
+  rec.maxAlternatives = 1;
+  let finalText = "";
+  let failed = false;
+
+  rec.onstart = () => handlers.onStart?.();
+  rec.onresult = (e) => {
+    let interim = "";
+    finalText = "";
+    for (let i = 0; i < e.results.length; i++) {
+      const result = e.results[i];
+      if (result.isFinal) finalText += result[0].transcript;
+      else interim += result[0].transcript;
+    }
+    handlers.onPartial?.(`${finalText}${interim}`.trim());
+  };
+  rec.onerror = (e) => {
+    if (e.error === "aborted") return;
+    failed = true;
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      handlers.onError(
+        "Accès au micro refusé. Autorisez le micro dans les réglages du navigateur pour poser votre question à voix haute."
+      );
+    } else if (e.error === "no-speech") {
+      handlers.onError("Aucune parole détectée — parlez plus près du micro et réessayez.");
+    } else if (e.error === "network") {
+      handlers.onError("La reconnaissance vocale nécessite une connexion Internet.");
+    } else {
+      handlers.onError(GENERIC_ERROR_MESSAGE);
+    }
+  };
+  rec.onend = () => {
+    if (!failed) {
+      if (finalText.trim()) handlers.onResult(finalText.trim());
+      else handlers.onError("Aucune parole détectée — parlez plus près du micro et réessayez.");
+    }
+    handlers.onEnd();
+  };
+  rec.start();
+  return { stop: () => rec.stop() };
 }
 
 function pickRecorderMimeType(): string | undefined {
@@ -55,6 +138,16 @@ export async function captureVoice(
   language: VoiceLanguage,
   handlers: CaptureHandlers
 ): Promise<CaptureController | null> {
+  const Ctor = recognitionCtor();
+  const bcp47 = RECOGNITION_LANG[language];
+  if (Ctor && bcp47) {
+    try {
+      return captureWithBrowser(Ctor, bcp47, handlers);
+    } catch {
+      // ex. une reconnaissance deja en cours : on tente l'enregistrement classique
+    }
+  }
+
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     handlers.onError("Le micro n'est pas accessible depuis ce navigateur.");
     handlers.onEnd();
@@ -120,12 +213,57 @@ export interface SpeakHandlers {
   onError: (message: string) => void;
 }
 
+/** Texte lisible a voix haute : sans syntaxe Markdown ni renvois aux sources. */
+function plainText(text: string): string {
+  return text
+    .replace(/\s*[[(]\s*Sources?\s*\d+[^\])]*[\])]/gi, "")
+    .replace(/\*\*|__|#{1,6}\s+/g, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .trim();
+}
+
+/** Langue BCP 47 des voix du navigateur — seules le francais et l'anglais
+ * en ont partout ; aucun navigateur ne propose le wolof, le pulaar, le
+ * sereer ou le diola. */
+const BROWSER_VOICE_LANG: Partial<Record<VoiceLanguage, string>> = { fr: "fr-FR", en: "en-US" };
+
+export const VOICE_UNAVAILABLE_MESSAGE =
+  "La lecture audio n'est pas encore disponible dans cette langue.";
+
+/** Lecture par la synthese vocale du navigateur (speechSynthesis), utilisee
+ * quand le backend ne fournit pas de voix. Renvoie null si la langue n'a
+ * pas de voix disponible. */
+function speakWithBrowser(text: string, language: VoiceLanguage, handlers: SpeakHandlers): SpeechController | null {
+  const bcp47 = BROWSER_VOICE_LANG[language];
+  if (!bcp47 || typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const utterance = new SpeechSynthesisUtterance(plainText(text));
+  utterance.lang = bcp47;
+  const prefix = bcp47.slice(0, 2);
+  const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith(prefix));
+  // Privilegie les voix « naturelles » / premium quand le systeme en propose.
+  utterance.voice =
+    voices.find((v) => /natural|premium|enhanced|google/i.test(v.name)) ?? voices.find((v) => v.default) ?? voices[0] ?? null;
+  utterance.rate = 1;
+  utterance.onend = () => handlers.onEnd();
+  utterance.onerror = (e) => {
+    if (e.error !== "canceled" && e.error !== "interrupted") handlers.onError(GENERIC_ERROR_MESSAGE);
+    handlers.onEnd();
+  };
+  synth.speak(utterance);
+  return {
+    pause: () => synth.pause(),
+    resume: () => synth.resume(),
+    cancel: () => synth.cancel(),
+  };
+}
+
 /**
- * Reads `text` aloud via the backend — wolof through Soynade, French/
- * English through Mistral's Voxtral TTS (a natural preset voice — see
- * backend/app/mistral_voice.py — not the robotic browser speechSynthesis
- * this used to fall back to). `audioEl` is the shared <audio> element the
- * caller owns; this function only drives it.
+ * Reads `text` aloud. Tries the backend voice first (`/api/voice/speak`);
+ * if the backend has none (501, or any failure), falls back to the
+ * browser's own speech synthesis for French/English. `audioEl` is the
+ * shared <audio> element the caller owns; this function only drives it.
  */
 export async function speakText(
   text: string,
@@ -133,13 +271,9 @@ export async function speakText(
   audioEl: HTMLAudioElement | null,
   handlers: SpeakHandlers
 ): Promise<SpeechController | null> {
-  if (!audioEl) {
-    handlers.onError(GENERIC_ERROR_MESSAGE);
-    return null;
-  }
-  handlers.onStart?.();
   try {
-    const blob = await synthesizeSpeech(text, language);
+    if (!audioEl) throw new ApiError(GENERIC_ERROR_MESSAGE);
+    const blob = await synthesizeSpeech(plainText(text), language);
     const url = URL.createObjectURL(blob);
     audioEl.src = url;
     audioEl.onended = () => {
@@ -147,6 +281,7 @@ export async function speakText(
       handlers.onEnd();
     };
     await audioEl.play();
+    handlers.onStart?.();
     return {
       pause: () => audioEl.pause(),
       resume: () => void audioEl.play(),
@@ -156,8 +291,13 @@ export async function speakText(
         URL.revokeObjectURL(url);
       },
     };
-  } catch (err) {
-    handlers.onError(err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE);
+  } catch {
+    const controller = speakWithBrowser(text, language, handlers);
+    if (controller) {
+      handlers.onStart?.();
+      return controller;
+    }
+    handlers.onError(VOICE_UNAVAILABLE_MESSAGE);
     handlers.onEnd();
     return null;
   }

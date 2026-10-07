@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { motion } from "motion/react";
-import { MessageSquarePlus, ShieldCheck } from "lucide-react";
+import { PanelLeft, ShieldCheck, SquarePen } from "lucide-react";
 import { LanguageSelect } from "@/components/LanguageSelect";
 import { cn } from "@/lib/utils";
 import type { Lang } from "@/lib/languages";
@@ -18,15 +18,34 @@ export function ChatHeader({
   onLangChange,
   onNewChat,
   showNewChat,
+  onToggleSidebar,
+  sidebarOpen = false,
 }: {
   lang: Lang;
   onLangChange: (lang: Lang) => void;
   onNewChat: () => void;
   showNewChat: boolean;
+  /** Present des qu'il existe un historique : affiche le bouton qui ouvre
+   * (mobile) ou replie (ordinateur) la barre des discussions. */
+  onToggleSidebar?: () => void;
+  /** Barre ouverte sur ordinateur : son propre bouton « Nouvelle
+   * discussion » suffit, celui de l'en-tete est alors masque a partir de md. */
+  sidebarOpen?: boolean;
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-900/5 bg-white/70 px-4 backdrop-blur-xl sm:gap-3 sm:px-10">
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="Afficher ou masquer l'historique des discussions"
+            title="Historique des discussions"
+            className="-ml-1.5 flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-700"
+          >
+            <PanelLeft size={19} />
+          </button>
+        )}
         <Image
           src="/ansd-logo.png"
           alt="ANSD — Agence Nationale de la Statistique et de la Démographie"
@@ -56,7 +75,7 @@ export function ChatHeader({
           animate={{ opacity: 1, y: 0 }}
           className="flex min-w-0 items-center gap-1.5 text-sm font-bold tracking-tight text-brand-700 sm:gap-2 sm:text-lg md:pointer-events-auto"
         >
-          <ShieldCheck className="h-4 w-4 shrink-0 text-brand-500 sm:h-5 sm:w-5" />
+          <ShieldCheck className="hidden h-5 w-5 shrink-0 text-brand-500 sm:block" />
           <span className="truncate">Assistant de l&rsquo;ANSD</span>
         </motion.div>
       </div>
@@ -69,12 +88,15 @@ export function ChatHeader({
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={onNewChat}
-            aria-label="Nouvelle conversation"
-            title="Nouvelle conversation"
-            className="flex h-9 w-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white text-xs font-semibold text-brand-800 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 sm:h-10 sm:w-10 lg:w-auto lg:px-3.5"
+            aria-label="Nouvelle discussion"
+            title="Nouvelle discussion"
+            className={cn(
+              "flex h-9 w-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white text-xs font-semibold text-brand-800 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 sm:h-10 sm:w-10 lg:w-auto lg:px-3.5",
+              sidebarOpen && "md:hidden"
+            )}
           >
-            <MessageSquarePlus size={15} className="shrink-0" />
-            <span className="hidden lg:inline">Nouvelle conversation</span>
+            <SquarePen size={15} className="shrink-0" />
+            <span className="hidden lg:inline">Nouvelle discussion</span>
           </motion.button>
         )}
         <LanguageSelect value={lang} onChange={onLangChange} />
