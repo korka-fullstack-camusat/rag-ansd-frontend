@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Copy, ExternalLink, ShieldCheck, ShieldQuestion, X } from "lucide-react";
+import { Check, Copy, ExternalLink, X } from "lucide-react";
 import { publicationUrl, type Citation, type SourceDocument } from "@/lib/api";
 
 function pageLabel(citation: Citation): string {
@@ -28,12 +28,10 @@ function formattedCitation(citation: Citation, source: SourceDocument | undefine
  * fournir honnêtement).
  */
 export function TracePanel({
-  question,
   citation,
   source,
   onClose,
 }: {
-  question: string;
   citation: Citation;
   source: SourceDocument | undefined;
   onClose: () => void;
@@ -51,7 +49,6 @@ export function TracePanel({
   }
 
   const rows = [
-    { label: "Question", value: question },
     { label: "Publication", value: citation.document_title },
     { label: "Éditeur", value: source?.publisher ?? "Non communiqué par l'API" },
     { label: "Date de publication", value: source?.publication_date ?? "Non communiqué par l'API" },
@@ -65,11 +62,11 @@ export function TracePanel({
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 32, opacity: 0 }}
         transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
-        aria-label="Traçabilité de la citation"
+        aria-label="Source de la citation"
         className="fixed inset-y-0 right-0 z-40 flex h-full w-full max-w-sm shrink-0 flex-col border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl lg:static lg:z-auto lg:bg-white/85 lg:shadow-none"
       >
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-5">
-          <span className="text-sm font-bold text-brand-900">Traçabilité de la citation</span>
+          <span className="text-sm font-bold text-brand-900">Source</span>
           <button
             type="button"
             onClick={onClose}
@@ -81,25 +78,6 @@ export function TracePanel({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
-          <div
-            className={
-              citation.verified
-                ? "flex items-start gap-2.5 rounded-xl border border-brand-200 bg-brand-50 p-3.5"
-                : "flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5"
-            }
-          >
-            {citation.verified ? (
-              <ShieldCheck size={16} className="mt-0.5 shrink-0 text-brand-600" />
-            ) : (
-              <ShieldQuestion size={16} className="mt-0.5 shrink-0 text-amber-500" />
-            )}
-            <p className="text-xs leading-relaxed text-slate-700">
-              {citation.verified
-                ? "Cette citation a été retrouvée mot pour mot dans le texte extrait de la page indiquée."
-                : "Cette citation n'a pas pu être retrouvée automatiquement dans le texte extrait de cette page — à vérifier manuellement avant diffusion."}
-            </p>
-          </div>
-
           <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white/60">
             {rows.map((row) => (
               <div key={row.label} className="px-4 py-3">

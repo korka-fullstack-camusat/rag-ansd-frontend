@@ -53,7 +53,7 @@ export default function AccueilPage() {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sources, setSources] = useState<SourceDocument[] | null>(null);
-  const [trace, setTrace] = useState<{ question: string; citation: Citation } | null>(null);
+  const [trace, setTrace] = useState<{ citation: Citation } | null>(null);
   const [speaking, setSpeaking] = useState<{ turnId: string; status: "loading" | "playing" | "paused" } | null>(
     null
   );
@@ -338,6 +338,8 @@ export default function AccueilPage() {
   }
 
   const hasHistory = hydrated && sessions.length > 0;
+  /** Aucune discussion encore : on presente l'assistant (grand accueil). */
+  const firstVisit = sessions.length === 0;
 
   /** Reads an answer aloud — wolof via Soynade, fr/en via Mistral's Voxtral
    * TTS (see lib/voice.ts and backend/app/mistral_voice.py). Uses the
@@ -429,70 +431,85 @@ export default function AccueilPage() {
               </div>
 
               <div className="relative z-10 my-auto flex w-full max-w-2xl flex-col items-center gap-6 text-center">
-                <HeroTitle />
+                {/* Grand accueil (titre, presentation, choix du mode) : premiere
+                    visite uniquement. Ensuite, une nouvelle discussion s'ouvre sur
+                    un ecran epure — l'utilisateur connait deja l'assistant. */}
+                {firstVisit ? (
+                  <>
+                  <HeroTitle />
 
-                <motion.p
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.6 }}
-                  className="max-w-xl font-serif text-base leading-relaxed text-slate-500 sm:text-lg"
-                >
-                  Posez votre question en{" "}
-                  <span className="font-sans font-semibold text-brand-700">
-                    français, wolof, anglais, pulaar, sérère ou diola
-                  </span>
-                  . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
-                </motion.p>
+                  <motion.p
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6 }}
+                    className="max-w-xl font-serif text-base leading-relaxed text-slate-500 sm:text-lg"
+                  >
+                    Posez votre question en{" "}
+                    <span className="font-sans font-semibold text-brand-700">
+                      français, wolof, anglais, pulaar, sérère ou diola
+                    </span>
+                    . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
+                  </motion.p>
 
-                {/* Choix du mode de discussion. Sans choix, la zone de saisie
-                    ci-dessous reste utilisable : on s'adapte a ce que
-                    l'utilisateur commence (taper, ou toucher le micro). */}
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.7 }}
-                  className="grid w-full grid-cols-2 gap-3"
-                  role="group"
-                  aria-label="Comment voulez-vous poser votre question ?"
-                >
-                  {(
-                    [
-                      { mode: "text", icon: PenLine, label: "Écrire", hint: "Je tape ma question" },
-                      { mode: "voice", icon: Mic, label: "Parler", hint: "Je pose ma question à voix haute" },
-                    ] as const
-                  ).map(({ mode, icon: Icon, label, hint }) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => chooseHeroMode(mode)}
-                      aria-pressed={heroMode === mode}
-                      className={cn(
-                        "flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-4 text-center shadow-sm transition-all sm:flex-row sm:gap-3 sm:px-5 sm:text-left",
-                        heroMode === mode
-                          ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200"
-                          : "border-slate-200 bg-white/80 hover:border-brand-300 hover:bg-brand-50/50"
-                      )}
-                    >
-                      <span
+                  {/* Choix du mode de discussion. Sans choix, la zone de saisie
+                      ci-dessous reste utilisable : on s'adapte a ce que
+                      l'utilisateur commence (taper, ou toucher le micro). */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.7 }}
+                    className="grid w-full grid-cols-2 gap-3"
+                    role="group"
+                    aria-label="Comment voulez-vous poser votre question ?"
+                  >
+                    {(
+                      [
+                        { mode: "text", icon: PenLine, label: "Écrire", hint: "Je tape ma question" },
+                        { mode: "voice", icon: Mic, label: "Parler", hint: "Je pose ma question à voix haute" },
+                      ] as const
+                    ).map(({ mode, icon: Icon, label, hint }) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => chooseHeroMode(mode)}
+                        aria-pressed={heroMode === mode}
                         className={cn(
-                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                          heroMode === mode ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600"
+                          "flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-4 text-center shadow-sm transition-all sm:flex-row sm:gap-3 sm:px-5 sm:text-left",
+                          heroMode === mode
+                            ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200"
+                            : "border-slate-200 bg-white/80 hover:border-brand-300 hover:bg-brand-50/50"
                         )}
                       >
-                        <Icon size={20} />
-                      </span>
-                      <span className="flex flex-col">
-                        <span className="text-[15px] font-bold text-brand-900">{label}</span>
-                        <span className="text-xs text-slate-500">{hint}</span>
-                      </span>
-                    </button>
-                  ))}
-                </motion.div>
+                        <span
+                          className={cn(
+                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                            heroMode === mode ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600"
+                          )}
+                        >
+                          <Icon size={20} />
+                        </span>
+                        <span className="flex flex-col">
+                          <span className="text-[15px] font-bold text-brand-900">{label}</span>
+                          <span className="text-xs text-slate-500">{hint}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                  </>
+                ) : (
+                  <motion.h1
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-2xl font-bold tracking-tight text-brand-900 sm:text-3xl"
+                  >
+                    Que voulez-vous savoir ?
+                  </motion.h1>
+                )}
 
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.8 }}
+                  transition={{ delay: firstVisit ? 0.8 : 0.1 }}
                   className="w-full"
                 >
                   {heroMode === "voice" ? (
@@ -515,6 +532,7 @@ export default function AccueilPage() {
                         onMicClick={handleMicClick}
                         disabled={isBusy}
                         inputRef={heroInputRef}
+                        autoFocus={!firstVisit}
                       />
                       {voiceNotice && <p className="mt-2 text-xs text-red-600">{voiceNotice}</p>}
                     </>
@@ -696,7 +714,7 @@ export default function AccueilPage() {
                                     key={`${citation.document_id}-${i}`}
                                     citation={citation}
                                     source={sourceById.get(citation.document_id)}
-                                    onShowTrace={() => setTrace({ question: turn.question, citation })}
+                                    onShowTrace={() => setTrace({ citation })}
                                   />
                                 ))}
                               </div>
@@ -745,7 +763,6 @@ export default function AccueilPage() {
         <AnimatePresence>
           {trace && (
             <TracePanel
-              question={trace.question}
               citation={trace.citation}
               source={sourceById.get(trace.citation.document_id)}
               onClose={() => setTrace(null)}

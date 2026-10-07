@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { FileText, Info, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { FileText, Info } from "lucide-react";
 import type { Citation, SourceDocument } from "@/lib/api";
 
 export function CitationCard({
@@ -33,14 +33,9 @@ export function CitationCard({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 pl-1">
-        {citation.verified ? (
-          <ShieldCheck size={15} className="text-brand-600" aria-label="Citation vérifiée" />
-        ) : (
-          <ShieldQuestion size={15} className="text-amber-500" aria-label="Citation non vérifiée" />
-        )}
-        <span className="hidden items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 group-hover:border-brand-300 group-hover:text-brand-700 sm:flex">
-          <Info size={11} />
-          Traçabilité
+        <span className="flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 transition-colors group-hover:border-brand-300 group-hover:bg-brand-100 sm:px-3.5">
+          <Info size={15} />
+          Source
         </span>
       </div>
     </motion.button>
