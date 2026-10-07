@@ -191,3 +191,51 @@
   width: 100%;
   max-width: 860px;
 }
+
+@media (max-width: 640px) {
+  .introRow {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .introText {
+    font-size: 17px;
+  }
+
+  .badgeSlot {
+    flex: initial;
+  }
+
+  .card {
+    padding: 18px 14px;
+  }
+
+  .chartArea {
+    gap: 8px;
+    height: 240px;
+  }
+
+  .yAxis {
+    width: 32px;
+    font-size: 11px;
+  }
+
+  .bars,
+  .xAxis {
+    padding-left: 4px;
+    padding-right: 4px;
+    gap: 10px;
+  }
+
+  .xAxis {
+    font-size: 10px;
+  }
+
+  .barValue {
+    font-size: 11px;
+  }
+
+  .legend {
+    gap: 4px 16px;
+  }
+}

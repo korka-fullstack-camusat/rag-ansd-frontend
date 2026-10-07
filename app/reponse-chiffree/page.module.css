@@ -119,3 +119,23 @@
   width: 100%;
   max-width: 760px;
 }
+
+@media (max-width: 640px) {
+  .figures {
+    flex-wrap: wrap;
+    gap: 20px 28px;
+  }
+
+  .figureValue {
+    font-size: 32px;
+  }
+
+  .badgeSlot {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .answerText {
+    font-size: 17px;
+  }
+}

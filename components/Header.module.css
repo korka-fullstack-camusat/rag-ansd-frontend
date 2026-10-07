@@ -63,3 +63,28 @@
   color: #ffffff;
   background: var(--c-primary);
 }
+
+@media (max-width: 640px) {
+  .header {
+    height: 60px;
+    gap: 12px;
+  }
+
+  .brand {
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+  }
+
+  .name {
+    font-size: 17px;
+  }
+
+  .tagline {
+    font-size: 11px;
+  }
+
+  .right {
+    gap: 8px;
+  }
+}

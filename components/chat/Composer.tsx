@@ -49,7 +49,7 @@ export function Composer({
       <div
         className={cn(
           "flex w-full items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl transition-shadow focus-within:border-brand-300 focus-within:shadow-glow",
-          isHero ? "p-2.5 pl-5" : "p-1.5 pl-4"
+          isHero ? "p-2 pl-4 sm:p-2.5 sm:pl-5" : "p-1.5 pl-4"
         )}
       >
         <input
@@ -98,10 +98,10 @@ export function Composer({
           onClick={submit}
           className={cn(
             "flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-glow transition-opacity disabled:opacity-40 disabled:shadow-none",
-            isHero ? "h-11 gap-1.5 px-4 text-sm font-semibold" : "h-9 w-9"
+            isHero ? "h-11 w-11 gap-1.5 text-sm font-semibold sm:w-auto sm:px-4" : "h-9 w-9"
           )}
         >
-          {isHero && <span>Interroger</span>}
+          {isHero && <span className="hidden sm:inline">Interroger</span>}
           <ArrowUp size={isHero ? 16 : 17} strokeWidth={2.5} />
         </motion.button>
       </div>

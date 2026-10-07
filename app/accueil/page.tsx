@@ -8,14 +8,14 @@ import { Composer } from "@/components/chat/Composer";
 import { CitationCard } from "@/components/chat/CitationCard";
 import { TracePanel } from "@/components/chat/TracePanel";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
-import type { Lang } from "@/components/Header";
+import { HeroTitle } from "@/components/chat/HeroTitle";
+import { LANG_TO_API, type Lang } from "@/lib/languages";
 import {
   ApiError,
   askQuestion,
   fetchSources,
   GENERIC_ERROR_MESSAGE,
   type Citation,
-  type Language,
   type QueryResponse,
   type SourceDocument,
 } from "@/lib/api";
@@ -37,7 +37,6 @@ const STATS = [
   { value: "62,9 %", label: "savent lire et écrire" },
 ];
 
-const LANG_TO_API: Record<Lang, Language> = { FR: "fr", WO: "wo", EN: "en" };
 
 type TurnStatus = "recording" | "transcribing" | "loading" | "done" | "error";
 
@@ -208,8 +207,7 @@ export default function AccueilPage() {
 
   return (
     // `position: fixed` on purpose, not `h-screen`/`h-full`: this shell must
-    // sit exactly below the disclaimer banner (app/layout.tsx) and fill the
-    // rest of the viewport, header and composer never moving — only the
+    // fill the whole viewport, header and composer never moving — only the
     // message list (its own `overflow-y-auto` region below) scrolls. An
     // earlier version sized this via a percentage-height chain (`h-full`
     // resolving against an ancestor's flex-computed height) that looked
@@ -217,12 +215,9 @@ export default function AccueilPage() {
     // resolving — the moment the empty-state hero swapped for the
     // conversation view, leaving a dead gap under the composer with nothing
     // controlling where it sat. `position: fixed` has no such dependency:
-    // its box is computed directly from the viewport via `inset`/`top`, not
-    // from any ancestor's height at all, banner-height included — see
-    // DemoDisclaimerBanner.tsx for the `--disclaimer-banner-height` custom
-    // property this reads (measured, not guessed, since the banner's own
-    // height varies with how many lines its text wraps to).
-    <div className="accueil-shell fixed inset-x-0 bottom-0 top-[var(--disclaimer-banner-height,44px)] z-20 flex flex-col overflow-hidden bg-white">
+    // its box is computed directly from the viewport via `inset`, not
+    // from any ancestor's height at all.
+    <div className="accueil-shell fixed inset-0 z-20 flex flex-col overflow-hidden bg-white">
       <ChatHeader
         lang={lang}
         onLangChange={setLang}
@@ -233,40 +228,28 @@ export default function AccueilPage() {
       <div className="flex min-h-0 min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {turns.length === 0 ? (
-            <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-10">
+            // Defilable (et non `overflow-hidden` + `justify-center`, qui coupait le
+            // haut du titre sur petit ecran) ; `my-auto` sur le contenu le garde
+            // centre verticalement quand la place suffit.
+            <div className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 py-8 sm:px-6 sm:py-10">
               {/* Fond dégradé décoratif — hors scope du brief institutionnel, assumé ici */}
               <div className="pointer-events-none absolute -top-32 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-200/50 via-brand-100/40 to-transparent blur-3xl" />
               <div className="pointer-events-none absolute -bottom-40 -right-24 h-80 w-80 rounded-full bg-brand-100/60 blur-3xl" />
 
-              <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50/80 px-3.5 py-1.5 text-xs font-semibold text-brand-700"
-                >
-                  <ShieldCheck size={13} />
-                  Assistant de l&rsquo;ANSD
-                </motion.div>
-
-                <motion.h1
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.05 }}
-                  className="bg-gradient-to-br from-brand-800 via-brand-600 to-brand-900 bg-clip-text text-4xl font-extrabold leading-[1.15] tracking-tight text-transparent sm:text-5xl"
-                >
-                  Les statistiques officielles
-                  <br />
-                  du Sénégal, en réponse à vos questions.
-                </motion.h1>
+              <div className="relative z-10 mt-auto flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+                <HeroTitle />
 
                 <motion.p
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="max-w-lg font-serif text-base leading-relaxed text-slate-500"
+                  transition={{ delay: 0.6 }}
+                  className="max-w-xl font-serif text-base leading-relaxed text-slate-500 sm:text-lg"
                 >
-                  Français, wolof ou anglais. Chaque chiffre affiché provient d&rsquo;une
-                  publication de l&rsquo;ANSD, citée avec sa page.
+                  Posez votre question en{" "}
+                  <span className="font-sans font-semibold text-brand-700">
+                    français, wolof, anglais, pulaar, sérère ou diola
+                  </span>
+                  . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
                 </motion.p>
 
                 <motion.div
@@ -315,7 +298,7 @@ export default function AccueilPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="relative z-10 mt-12 flex w-full max-w-2xl flex-col items-center gap-3 border-t border-slate-100 pt-6"
+                className="relative z-10 mb-auto mt-12 flex w-full max-w-2xl flex-col items-center gap-3 border-t border-slate-100 pt-6"
               >
                 <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1.5">
                   {STATS.map((stat) => (
@@ -325,7 +308,7 @@ export default function AccueilPage() {
                     </span>
                   ))}
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
                   <FileStack size={13} className="text-slate-400" />
                   {sourcesError && <span className="text-xs text-slate-400">{sourcesError}</span>}
                   {!sourcesError && sources === null && (
@@ -336,10 +319,10 @@ export default function AccueilPage() {
                       <span
                         key={s.id}
                         title={s.title}
-                        className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500"
+                        className="flex min-w-0 max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 sm:max-w-[280px]"
                       >
-                        {s.id.split("-")[0].toUpperCase()}{" "}
-                        <span className="text-slate-400">— {s.publication_date.slice(0, 4)}</span>
+                        <span className="truncate">{s.title}</span>
+                        <span className="shrink-0 text-slate-400">— {s.publication_date.slice(0, 4)}</span>
                       </span>
                     ))}
                 </div>

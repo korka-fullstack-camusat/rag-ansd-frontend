@@ -54,6 +54,19 @@
   --side-margin: 72px;
 }
 
+/* Marges laterales adaptees a la largeur d'ecran (tablette, telephone). */
+@media (max-width: 1024px) {
+  :root {
+    --side-margin: 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --side-margin: 16px;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

@@ -1,25 +1,20 @@
 import styles from "./Header.module.css";
-import { GlobeIcon } from "./icons";
+import { LanguageSelect } from "./LanguageSelect";
+import type { Lang } from "@/lib/languages";
 
-export type Lang = "FR" | "WO" | "EN";
-
-const LANGS: Lang[] = ["FR", "WO", "EN"];
+export type { Lang };
 
 /**
- * `onLangChange` is optional: the five static-reference screens render the
- * segmented switch with a fixed `activeLang` and no wiring, exactly as
- * before. `/accueil`, the live query flow, passes it to actually change the
- * `language` sent to the backend. `extra` is an optional slot before the
- * globe icon — `/accueil` uses it for "Nouvelle conversation".
+ * `onLangChange` is optional: the static-reference screens render the
+ * language menu with a fixed `activeLang` and no wiring. `extra` is an
+ * optional slot before the language menu.
  */
 export default function Header({
   activeLang,
-  showGlobeIcon = false,
   onLangChange,
   extra,
 }: {
   activeLang: Lang;
-  showGlobeIcon?: boolean;
   onLangChange?: (lang: Lang) => void;
   extra?: React.ReactNode;
 }) {
@@ -31,24 +26,7 @@ export default function Header({
       </div>
       <div className={styles.right}>
         {extra}
-        {showGlobeIcon && <GlobeIcon />}
-        <div className={styles.langSwitch} role="group" aria-label="Langue de l'interface">
-          {LANGS.map((lang) => (
-            <button
-              key={lang}
-              type="button"
-              aria-pressed={lang === activeLang}
-              onClick={onLangChange ? () => onLangChange(lang) : undefined}
-              className={
-                lang === activeLang
-                  ? `${styles.langOption} ${styles.langOptionActive}`
-                  : styles.langOption
-              }
-            >
-              {lang}
-            </button>
-          ))}
-        </div>
+        <LanguageSelect value={activeLang} onChange={onLangChange} />
       </div>
     </header>
   );

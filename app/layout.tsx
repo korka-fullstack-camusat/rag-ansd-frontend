@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import DemoDisclaimerBanner from "@/components/DemoDisclaimerBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "XAMXAM — Statistiques officielles du Sénégal",
   description:
-    "Démo de hackathon non affiliée à l'ANSD : assistant conversationnel expérimental sur des statistiques officielles du Sénégal.",
+    "Assistant conversationnel sur les statistiques officielles du Sénégal.",
 };
 
 export default function RootLayout({
@@ -28,7 +27,6 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <DemoDisclaimerBanner />
         {children}
       </body>
     </html>

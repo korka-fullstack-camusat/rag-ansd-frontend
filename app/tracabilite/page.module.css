@@ -227,3 +227,55 @@
   font-weight: 500;
   color: var(--c-ink);
 }
+
+/* Tablette et telephone : le panneau passe sous la conversation. */
+@media (max-width: 1024px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .conversationContent {
+    padding: 32px var(--side-margin) 24px;
+  }
+
+  .conversationFooter {
+    padding: 20px var(--side-margin) 24px;
+  }
+
+  .panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--c-border);
+  }
+
+  .panelHead,
+  .panelBody,
+  .panelActions {
+    padding-left: var(--side-margin);
+    padding-right: var(--side-margin);
+  }
+}
+
+@media (max-width: 640px) {
+  .figures {
+    flex-wrap: wrap;
+    gap: 20px 28px;
+  }
+
+  .figureValue {
+    font-size: 32px;
+  }
+
+  .answerText {
+    font-size: 17px;
+  }
+
+  .row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .rowLabel {
+    width: auto;
+  }
+}

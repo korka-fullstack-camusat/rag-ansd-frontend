@@ -14,3 +14,7 @@
   font-weight: 500;
   color: var(--c-primary-deep);
 }
+
+.badge {
+  max-width: 100%;
+}

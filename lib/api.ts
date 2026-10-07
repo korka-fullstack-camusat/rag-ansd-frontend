@@ -7,7 +7,7 @@
  * it must be set before `next build` runs, not just at container start.
  */
 
-export type Language = "fr" | "wo" | "en";
+export type Language = "fr" | "wo" | "en" | "ff" | "srr" | "dyo";
 
 export interface Citation {
   document_id: string;

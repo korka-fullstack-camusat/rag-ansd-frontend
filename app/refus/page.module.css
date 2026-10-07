@@ -117,3 +117,22 @@
   width: 100%;
   max-width: 760px;
 }
+
+@media (max-width: 640px) {
+  .main {
+    padding-top: 28px;
+  }
+
+  .answerText {
+    font-size: 17px;
+  }
+
+  .granularityRow {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .granularityLabel {
+    width: auto;
+  }
+}
