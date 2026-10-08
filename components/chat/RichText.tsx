@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { DetailSource } from "@/lib/api";
 
 /**
  * Affiche le texte du modele sans laisser apparaitre la syntaxe Markdown :
@@ -21,12 +23,48 @@ function tableCells(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
+/** Lien vers la page d'une source citee dans le texte (#page=N). */
+export function detailSourceHref(src: DetailSource): string | null {
+  if (!src.url) return null;
+  const base = src.url.split("#")[0];
+  return src.page ? `${base}#page=${src.page}` : base;
+}
+
+/** Titre court pour un lien dans le texte (le titre complet est en info-bulle). */
+function shortTitle(title: string): string {
+  return title.length > 32 ? `${title.slice(0, 30).trimEnd()}…` : title;
+}
+
+function SourceRefLink({ src }: { src: DetailSource }) {
+  const href = detailSourceHref(src);
+  const label = `${shortTitle(src.title)}${src.page ? ` · p. ${src.page}` : ""}`;
+  const title = `${src.title}${src.page ? `, page ${src.page}` : ""}`;
+  const className =
+    "mx-0.5 inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border border-brand-100 bg-brand-50/70 px-1.5 py-px align-baseline font-sans text-[12px] font-medium text-brand-700";
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" title={`Ouvrir ${title}`} className={cn(className, "hover:border-brand-300 hover:text-brand-900")}>
+      {label}
+      <ArrowUpRight size={11} />
+    </a>
+  ) : (
+    <span title={title} className={className}>
+      {label}
+    </span>
+  );
+}
+
+function renderInline(text: string, keyPrefix: string, refs?: Map<number, DetailSource>): ReactNode[] {
   return text
-    .split(/(\*\*[^*]+\*\*)/g)
+    .split(/(\*\*[^*]+\*\*|\[\[\d+\]\])/g)
     .filter(Boolean)
-    .map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") ? (
+    .map((part, i) => {
+      const ref = /^\[\[(\d+)\]\]$/.exec(part);
+      if (ref) {
+        // Reference a une source : lien en place, ou rien si la source est inconnue.
+        const src = refs?.get(Number(ref[1]));
+        return src ? <SourceRefLink key={`${keyPrefix}-${i}`} src={src} /> : null;
+      }
+      return part.startsWith("**") && part.endsWith("**") ? (
         <strong key={`${keyPrefix}-${i}`} className="font-semibold text-slate-900">
           {part.slice(2, -2)}
         </strong>
@@ -36,8 +74,8 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
           .replace(/\*\*|__/g, "")
           .replace(/(^|\s)\*(\S)/g, "$1$2")
           .replace(/(\S)\*(\s|$)/g, "$1$2")
-      )
-    );
+      );
+    });
 }
 
 export type Block =
@@ -76,14 +114,24 @@ export function parse(text: string): Block[] {
   return blocks.filter((b) => (b.kind === "p" ? b.lines.length > 0 : true));
 }
 
-export function RichText({ text, className }: { text: string; className?: string }) {
+export function RichText({
+  text,
+  className,
+  sources,
+}: {
+  text: string;
+  className?: string;
+  /** Sources des references [[n]] du texte (explication detaillee). */
+  sources?: DetailSource[];
+}) {
+  const refs = sources ? new Map(sources.map((s) => [s.n, s])) : undefined;
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       {parse(text).map((block, i) => {
         if (block.kind === "h") {
           return (
             <p key={i} className="font-sans font-semibold text-slate-900">
-              {renderInline(block.text, `h${i}`)}
+              {renderInline(block.text, `h${i}`, refs)}
             </p>
           );
         }
@@ -96,7 +144,7 @@ export function RichText({ text, className }: { text: string; className?: string
                   <tr>
                     {head.map((cell, j) => (
                       <th key={j} className="px-3 py-2 align-top font-semibold">
-                        {renderInline(cell, `th${i}-${j}`)}
+                        {renderInline(cell, `th${i}-${j}`, refs)}
                       </th>
                     ))}
                   </tr>
@@ -106,7 +154,7 @@ export function RichText({ text, className }: { text: string; className?: string
                     <tr key={r} className="border-t border-slate-100">
                       {row.map((cell, j) => (
                         <td key={j} className={cn("px-3 py-2 align-top text-slate-700", j > 0 && "tabular-nums")}>
-                          {renderInline(cell, `td${i}-${r}-${j}`)}
+                          {renderInline(cell, `td${i}-${r}-${j}`, refs)}
                         </td>
                       ))}
                     </tr>
@@ -125,13 +173,13 @@ export function RichText({ text, className }: { text: string; className?: string
             >
               {block.items.map((item, j) => (
                 <li key={j} className="pl-1 marker:text-brand-400">
-                  {renderInline(item, `${i}-${j}`)}
+                  {renderInline(item, `${i}-${j}`, refs)}
                 </li>
               ))}
             </List>
           );
         }
-        return <p key={i}>{renderInline(block.lines.join(" "), `p${i}`)}</p>;
+        return <p key={i}>{renderInline(block.lines.join(" "), `p${i}`, refs)}</p>;
       })}
     </div>
   );

@@ -5,7 +5,7 @@
  * l'utilisateur — rien n'est envoye au backend.
  */
 
-import type { QueryResponse } from "./api";
+import type { DetailSource, QueryResponse } from "./api";
 
 export type TurnStatus = "recording" | "transcribing" | "loading" | "done" | "error";
 
@@ -28,6 +28,8 @@ export interface Turn {
   /** Explication detaillee obtenue via « Voir plus » — conservee avec la
    * discussion pour ne pas la regenerer. */
   details?: string;
+  /** Sources citees dans le texte de l'explication (references [[n]]). */
+  detailsSources?: DetailSource[];
   error?: string;
   /** Vrai si la reponse a ete interrompue (page quittee pendant l'attente) :
    * l'interface propose alors de reposer la question. */

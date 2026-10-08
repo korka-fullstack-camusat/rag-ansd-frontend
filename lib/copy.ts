@@ -6,19 +6,35 @@
  * Meme decoupage que l'affichage (RichText.parse).
  */
 
-import { parse, type Block } from "@/components/chat/RichText";
-import { publicationUrl, type Citation } from "./api";
+import { detailSourceHref, parse, type Block } from "@/components/chat/RichText";
+import { publicationUrl, type Citation, type DetailSource } from "./api";
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Sources des references [[n]] du texte en cours de copie (explication detaillee).
+let refs = new Map<number, DetailSource>();
+
+function refLabel(src: DetailSource): string {
+  return `${src.title}${src.page ? `, p. ${src.page}` : ""}`;
+}
+
 function inlineHtml(text: string): string {
-  return escapeHtml(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\*\*|__/g, "");
+  return escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*\*|__/g, "")
+    .replace(/\[\[(\d+)\]\]/g, (_, n) => {
+      const src = refs.get(Number(n));
+      if (!src) return "";
+      const href = detailSourceHref(src);
+      const label = `(${escapeHtml(refLabel(src))})`;
+      return href ? ` <a href="${escapeHtml(href)}">${label}</a>` : ` ${label}`;
+    });
 }
 
 function inlinePlain(text: string): string {
-  return text.replace(/\*\*|__/g, "");
+  return text.replace(/\*\*|__/g, "").replace(/\[\[(\d+)\]\]/g, (_, n) => (refs.has(Number(n)) ? ` [${n}]` : ""));
 }
 
 function blockHtml(block: Block): string {
@@ -74,7 +90,12 @@ function sourceLinks(citations: Citation[]): { label: string; href: string }[] {
   return [...links.values()];
 }
 
-export async function copyAnswer(answer: string, citations: Citation[] = []): Promise<void> {
+export async function copyAnswer(
+  answer: string,
+  citations: Citation[] = [],
+  inlineSources: DetailSource[] = []
+): Promise<void> {
+  refs = new Map(inlineSources.map((s) => [s.n, s]));
   const blocks = parse(answer);
   const links = sourceLinks(citations);
   const title = links.length > 1 ? "Sources" : "Source";
@@ -90,7 +111,14 @@ export async function copyAnswer(answer: string, citations: Citation[] = []): Pr
         .map((l) => `<a href="${escapeHtml(l.href)}">${escapeHtml(l.label)}</a>`)
         .join(" ; ")}</p>`
     : "";
-  const plain = [blocks.map(blockPlain).join("\n\n"), plainSources].filter(Boolean).join("\n\n");
+  // Sources citees dans le texte : liste numerotee a la fin du texte simple
+  // (le texte mis en forme a deja ses liens en place).
+  const plainRefs = inlineSources.length
+    ? `Sources :\n${inlineSources
+        .map((s) => `[${s.n}] ${refLabel(s)}${detailSourceHref(s) ? ` : ${detailSourceHref(s)}` : ""}`)
+        .join("\n")}`
+    : "";
+  const plain = [blocks.map(blockPlain).join("\n\n"), plainSources, plainRefs].filter(Boolean).join("\n\n");
   const html = blocks.map(blockHtml).join("") + htmlSources;
 
   if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {

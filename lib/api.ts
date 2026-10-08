@@ -95,6 +95,19 @@ function clientId(): string | undefined {
 /** Contexte d'usage joint aux appels (statistiques du tableau de bord). */
 /** Source d'une reponse (document + page), renvoyee au backend pour que les
  * questions de suite et « Voir plus » cherchent d'abord la. */
+/** Source citee dans le texte d'une explication detaillee (marqueur [[n]]). */
+export interface DetailSource {
+  n: number;
+  title: string;
+  page: number | null;
+  url: string | null;
+}
+
+export interface ExplainResult {
+  details: string;
+  sources: DetailSource[];
+}
+
 export interface SourceRef {
   title: string;
   page: number | null;
@@ -174,7 +187,7 @@ export async function explainAnswer(
   language: Language,
   ctx?: UsageContext,
   sources: SourceRef[] = []
-): Promise<string> {
+): Promise<ExplainResult> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/explain`, {
@@ -189,7 +202,7 @@ export async function explainAnswer(
     throw new ApiError(await readErrorDetail(res), res.status);
   }
   const body = await res.json();
-  return body.details as string;
+  return { details: body.details as string, sources: (body.sources ?? []) as DetailSource[] };
 }
 
 /** Signale un clic utile au tableau de bord admin (« Voir plus » deplie,

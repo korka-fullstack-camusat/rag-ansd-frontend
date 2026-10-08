@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronDown, Copy, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2 } from "lucide-react";
+import { BookOpen, Check, Copy, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2, X } from "lucide-react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
-import { CitationCard } from "@/components/chat/CitationCard";
-import { TracePanel } from "@/components/chat/TracePanel";
+import { SourceLinks } from "@/components/chat/SourceLinks";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { HeroTitle } from "@/components/chat/HeroTitle";
 import { RichText } from "@/components/chat/RichText";
@@ -14,21 +13,20 @@ import { cn } from "@/lib/utils";
 import { copyAnswer } from "@/lib/copy";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { VoiceButton } from "@/components/chat/VoiceButton";
-import { LANG_TO_API, type Lang } from "@/lib/languages";
+import { LANG_TO_API, newChatPrompt, type Lang } from "@/lib/languages";
 import {
   ApiError,
   askQuestion,
   explainAnswer,
-  fetchSources,
   trackEvent,
   sourcesOf,
   suggestTitle,
+  type DetailSource,
   type HistoryTurn,
   GENERIC_ERROR_MESSAGE,
   type Citation,
   type Language,
   type QueryResponse,
-  type SourceDocument,
 } from "@/lib/api";
 import {
   captureVoice,
@@ -56,8 +54,6 @@ export default function AccueilPage() {
   const [hydrated, setHydrated] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [sources, setSources] = useState<SourceDocument[] | null>(null);
-  const [trace, setTrace] = useState<{ citation: Citation } | null>(null);
   const [speaking, setSpeaking] = useState<{ turnId: string; status: "loading" | "playing" | "paused" } | null>(
     null
   );
@@ -70,21 +66,14 @@ export default function AccueilPage() {
   const heroInputRef = useRef<HTMLInputElement>(null);
   // « Voir plus » : echanges deplies, en cours de chargement, ou en erreur.
   // Le texte detaille lui-meme est stocke dans l'echange (turn.details).
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Echange dont l'explication detaillee est ouverte dans la fenetre « Voir plus ».
+  const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const [detailsLoading, setDetailsLoading] = useState<Set<string>>(new Set());
   const [detailsError, setDetailsError] = useState<Record<string, string>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const speechControllerRef = useRef<SpeechController | null>(null);
   const captureControllerRef = useRef<CaptureController | null>(null);
-
-  useEffect(() => {
-    // Sert uniquement a enrichir les cartes de citation (editeur, date) ;
-    // en cas d'echec elles s'affichent simplement sans ces details.
-    fetchSources()
-      .then(setSources)
-      .catch(() => setSources([]));
-  }, []);
 
   useEffect(() => {
     const stored = loadSessions();
@@ -240,14 +229,14 @@ export default function AccueilPage() {
     try {
       // Question reformulee (questions de suite) et sources de la reponse : l'explication
       // porte sur la meme chose et s'appuie sur les memes documents.
-      const details = await explainAnswer(
+      const { details, sources: detailsSources } = await explainAnswer(
         response.standalone_question ?? question,
         response.answer,
         response.language as Language,
         { sessionId },
         sourcesOf(response)
       );
-      patchTurn(sessionId, turnId, { details });
+      patchTurn(sessionId, turnId, { details, detailsSources });
     } catch (err) {
       setDetailsError((e) => ({ ...e, [turnId]: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE }));
     } finally {
@@ -262,19 +251,15 @@ export default function AccueilPage() {
   /** « Voir plus » / « Voir moins » : deplie tout de suite (le texte, ou un
    * squelette s'il est encore en preparation) ; relance la preparation si
    * elle n'a pas eu lieu (ancienne discussion) ou a echoue. */
-  function handleToggleDetails(turn: Turn) {
+  /** « Voir plus » : ouvre l'explication detaillee dans une fenetre centree
+   * (squelette de chargement si elle est encore en preparation). */
+  function handleOpenDetails(turn: Turn) {
     if (!activeSession || !turn.response) return;
-    const turnId = turn.id;
-    const open = !expanded.has(turnId);
-    setExpanded((set) => {
-      const next = new Set(set);
-      if (open) next.add(turnId);
-      else next.delete(turnId);
-      return next;
-    });
-    if (open) trackEvent("details_open", { sessionId: activeSession.id });
-    if (open && !turn.details && !detailsLoading.has(turnId)) {
-      void loadDetails(activeSession.id, turnId, turn.question, turn.response);
+    setDetailsFor(turn.id);
+    trackEvent("details_open", { sessionId: activeSession.id });
+    // Absente, ou ancienne (preparee avant les liens dans le texte) : on la (re)genere.
+    if ((!turn.details || !turn.detailsSources) && !detailsLoading.has(turn.id)) {
+      void loadDetails(activeSession.id, turn.id, turn.question, turn.response);
     }
   }
 
@@ -294,11 +279,7 @@ export default function AccueilPage() {
       speechControllerRef.current?.cancel();
       setSpeaking(null);
     }
-    setExpanded((set) => {
-      const next = new Set(set);
-      next.delete(turn.id);
-      return next;
-    });
+    setDetailsFor((id) => (id === turn.id ? null : id));
     patchTurn(activeSession.id, turn.id, {
       status: "loading",
       response: undefined,
@@ -399,7 +380,7 @@ export default function AccueilPage() {
     speechControllerRef.current?.cancel();
     setSpeaking(null);
     setInput("");
-    setTrace(null);
+    setDetailsFor(null);
   }
 
   function handleNewChat() {
@@ -473,7 +454,6 @@ export default function AccueilPage() {
     return () => speechControllerRef.current?.cancel();
   }, []);
 
-  const sourceById = new Map((sources ?? []).map((s) => [s.id, s]));
 
   return (
     // `position: fixed` on purpose, not `h-screen`/`h-full`: this shell must
@@ -599,7 +579,7 @@ export default function AccueilPage() {
                     animate={{ opacity: 1, y: 0 }}
                     className="text-2xl font-bold tracking-tight text-brand-900 sm:text-3xl"
                   >
-                    Que voulez-vous savoir ?
+                    {newChatPrompt(lang)}
                   </motion.h1>
                 )}
 
@@ -735,19 +715,19 @@ export default function AccueilPage() {
                               className="font-serif text-[17px] leading-[1.7] text-slate-800"
                             />
 
+                            {/* Sources juste apres la reponse : un lien par page citee */}
+                            <SourceLinks citations={turn.response.citations} />
+
                             {/* Barre d'actions, juste sous la reponse */}
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => handleToggleDetails(turn)}
-                                aria-expanded={expanded.has(turn.id)}
+                                onClick={() => handleOpenDetails(turn)}
+                                aria-haspopup="dialog"
                                 className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-100"
                               >
-                                {expanded.has(turn.id) ? "Voir moins" : "Voir plus"}
-                                <ChevronDown
-                                  size={16}
-                                  className={cn("transition-transform", expanded.has(turn.id) && "rotate-180")}
-                                />
+                                <BookOpen size={16} />
+                                Explication détaillée
                               </button>
 
                               <button
@@ -777,68 +757,7 @@ export default function AccueilPage() {
                               <CopyButton answer={turn.response.answer} citations={turn.response.citations} />
                             </div>
 
-                            <AnimatePresence initial={false}>
-                              {expanded.has(turn.id) && (
-                                <motion.div
-                                  initial={{ opacity: 0, height: 0 }}
-                                  animate={{ opacity: 1, height: "auto" }}
-                                  exit={{ opacity: 0, height: 0 }}
-                                  transition={{ duration: 0.2, ease: "easeOut" }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="rounded-xl border-l-[3px] border-brand-300 bg-brand-50/50 px-4 py-3 text-[15px] leading-relaxed text-slate-700">
-                                    {turn.details ? (
-                                      <div className="flex flex-col gap-3">
-                                        <RichText text={turn.details} />
-                                        <div className="flex justify-end">
-                                          <CopyButton
-                                            answer={turn.details}
-                                            citations={turn.response.citations}
-                                            label="Copier l'explication"
-                                            small
-                                          />
-                                        </div>
-                                      </div>
-                                    ) : detailsError[turn.id] && !detailsLoading.has(turn.id) ? (
-                                      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                                        {detailsError[turn.id]}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            activeSession &&
-                                            loadDetails(activeSession.id, turn.id, turn.question, turn.response!)
-                                          }
-                                          className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-900"
-                                        >
-                                          <RotateCcw size={13} />
-                                          Réessayer
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex animate-pulse flex-col gap-2.5 py-1" aria-label="Chargement des détails">
-                                        <div className="h-3 w-11/12 rounded-full bg-brand-100" />
-                                        <div className="h-3 w-full rounded-full bg-brand-100" />
-                                        <div className="h-3 w-4/5 rounded-full bg-brand-100" />
-                                        <div className="h-3 w-2/3 rounded-full bg-brand-100" />
-                                      </div>
-                                    )}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
 
-                            {turn.response.citations.length > 0 && (
-                              <div className="flex flex-col gap-2">
-                                {turn.response.citations.map((citation, i) => (
-                                  <CitationCard
-                                    key={`${citation.document_id}-${i}`}
-                                    citation={citation}
-                                    source={sourceById.get(citation.document_id)}
-                                    onShowTrace={() => setTrace({ citation })}
-                                  />
-                                ))}
-                              </div>
-                            )}
                           </>
                         )}
                       </motion.div>
@@ -880,16 +799,26 @@ export default function AccueilPage() {
           )}
         </div>
 
-        <AnimatePresence>
-          {trace && (
-            <TracePanel
-              citation={trace.citation}
-              source={sourceById.get(trace.citation.document_id)}
-              onClose={() => setTrace(null)}
-            />
-          )}
-        </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {(() => {
+          const turn = detailsFor ? turns.find((t) => t.id === detailsFor) : undefined;
+          if (!turn?.response) return null;
+          return (
+            <DetailsModal
+              key="details"
+              details={turn.details}
+              detailsSources={turn.detailsSources}
+              loading={detailsLoading.has(turn.id)}
+              error={detailsError[turn.id]}
+              citations={turn.response.citations}
+              onRetry={() => activeSession && loadDetails(activeSession.id, turn.id, turn.question, turn.response!)}
+              onClose={() => setDetailsFor(null)}
+            />
+          );
+        })()}
+      </AnimatePresence>
 
       {/* Shared player for answer read-aloud (handleListen / lib/voice.ts) —
           every turn's own recording bubble above has its own <audio>
@@ -921,11 +850,14 @@ function RegenerateButton({ onClick, disabled }: { onClick: () => void; disabled
 function CopyButton({
   answer,
   citations,
+  inlineSources,
   label = "Copier",
   small,
 }: {
   answer: string;
   citations: Citation[];
+  /** Sources citees dans le texte (references [[n]]) — explication detaillee. */
+  inlineSources?: DetailSource[];
   label?: string;
   small?: boolean;
 }) {
@@ -933,7 +865,7 @@ function CopyButton({
 
   async function copy() {
     try {
-      await copyAnswer(answer, citations);
+      await copyAnswer(answer, citations, inlineSources);
       setState("copied");
     } catch {
       setState("error");
@@ -947,7 +879,7 @@ function CopyButton({
       onClick={copy}
       aria-label={label === "Copier" ? "Copier la réponse" : label}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border font-semibold transition-colors",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border font-semibold transition-colors",
         small ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
         state === "copied"
           ? "border-brand-300 bg-brand-50 text-brand-700"
@@ -957,5 +889,113 @@ function CopyButton({
       {state === "copied" ? <Check size={small ? 14 : 16} /> : <Copy size={small ? 14 : 16} />}
       <span aria-live="polite">{state === "copied" ? "Copié" : state === "error" ? "Échec de la copie" : label}</span>
     </button>
+  );
+}
+
+/** Fenetre « Voir plus » : explication detaillee de la reponse, centree. Fermeture
+ * par la croix, Echap ou un clic en dehors. */
+function DetailsModal({
+  details,
+  detailsSources,
+  loading,
+  error,
+  citations,
+  onRetry,
+  onClose,
+}: {
+  details?: string;
+  detailsSources?: DetailSource[];
+  loading: boolean;
+  error?: string;
+  citations: Citation[];
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Les sources sont dans le texte (liens apres chaque passage). Une ancienne
+  // explication, sans ces liens, est regeneree a l'ouverture : en attendant on
+  // affiche le chargement plutot que l'ancien texte.
+  const ready = !!details && (detailsSources !== undefined || (!loading && !!error));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+      />
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="details-title"
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.98 }}
+        transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
+        className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+          <h2 id="details-title" className="text-base font-bold text-brand-900">
+            Explication détaillée
+          </h2>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 font-serif text-[16px] leading-relaxed text-slate-800 sm:px-6">
+          {ready ? (
+            <RichText text={details!} sources={detailsSources} />
+          ) : error && !loading ? (
+            <div className="flex flex-wrap items-center gap-3 font-sans text-sm text-slate-500">
+              {error}
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-900"
+              >
+                <RotateCcw size={13} />
+                Réessayer
+              </button>
+            </div>
+          ) : (
+            <div className="flex animate-pulse flex-col gap-3 py-1" aria-label="Chargement de l'explication">
+              <div className="h-3.5 w-11/12 rounded-full bg-brand-100" />
+              <div className="h-3.5 w-full rounded-full bg-brand-100" />
+              <div className="h-3.5 w-4/5 rounded-full bg-brand-100" />
+              <div className="h-3.5 w-2/3 rounded-full bg-brand-100" />
+            </div>
+          )}
+        </div>
+
+        {ready && (
+          <div className="flex justify-end border-t border-slate-100 bg-slate-50/60 px-5 py-3 sm:px-6">
+            <CopyButton
+              answer={details!}
+              citations={detailsSources ? [] : citations}
+              inlineSources={detailsSources}
+              label="Copier l'explication"
+              small
+            />
+          </div>
+        )}
+      </motion.div>
+    </div>
   );
 }

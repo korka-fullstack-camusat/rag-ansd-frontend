@@ -546,7 +546,7 @@ function SectionContent({
             <Stat label="Questions écrites" value={`${(k.questions ? 100 - k.voice_share : 0).toLocaleString("fr-FR")} %`} hint="tapées au clavier">
               <Meter value={k.questions ? 100 - k.voice_share : 0} label="Part des questions écrites" />
             </Stat>
-            <Stat label="« Voir plus » ouverts" value={fmt.format(k.details_opened)} hint={`${k.details_rate.toLocaleString("fr-FR")} % des réponses`} />
+            <Stat label="Explications ouvertes" value={fmt.format(k.details_opened)} hint={`${k.details_rate.toLocaleString("fr-FR")} % des réponses`} />
             <Stat label="Écoutes" value={fmt.format(k.listens)} hint="clics sur « Écouter » (hors lecture automatique)" />
           </section>
           <Card>
@@ -611,7 +611,7 @@ function SectionContent({
             className="col-span-2 lg:col-span-3"
             label="Tokens consommés"
             value={compact(k.prompt_tokens + k.completion_tokens)}
-            hint={`Réponses uniquement (hors « Voir plus » et titres) · ${compact(k.prompt_tokens)} en entrée, ${compact(k.completion_tokens)} en sortie`}
+            hint={`Réponses uniquement (hors explications détaillées et titres) · ${compact(k.prompt_tokens)} en entrée, ${compact(k.completion_tokens)} en sortie`}
           />
         </section>
       );
