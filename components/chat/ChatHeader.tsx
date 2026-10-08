@@ -20,7 +20,11 @@ export function ChatHeader({
   showNewChat,
   onToggleSidebar,
   sidebarOpen = false,
+  showLanguage = true,
 }: {
+  /** Menu de langue de l'en-tete : masque sur l'ecran d'accueil, ou le choix des
+   * langues est affiche au centre de la page. */
+  showLanguage?: boolean;
   lang: Lang;
   onLangChange: (lang: Lang) => void;
   onNewChat: () => void;
@@ -99,7 +103,7 @@ export function ChatHeader({
             <span className="hidden lg:inline">Nouvelle discussion</span>
           </motion.button>
         )}
-        <LanguageSelect value={lang} onChange={onLangChange} />
+        {showLanguage && <LanguageSelect value={lang} onChange={onLangChange} />}
       </div>
     </header>
   );

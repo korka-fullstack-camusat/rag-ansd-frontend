@@ -3,7 +3,9 @@ import type { Language } from "./api";
 /** Langues proposees dans l'interface, dans l'ordre d'affichage du menu. */
 export type Lang = "FR" | "WO" | "EN" | "FF" | "SRR" | "DYO";
 
-export const LANGS: Lang[] = ["FR", "WO", "EN", "FF", "SRR", "DYO"];
+// Langues proposees : le pulaar, le sereer et le diola ne sont plus offerts (le type `Lang`
+// les garde pour ne pas casser les donnees deja enregistrees).
+export const LANGS: Lang[] = ["FR", "WO", "EN"];
 
 /** Nom affiche dans le selecteur. */
 export const LANG_LABELS: Record<Lang, string> = {

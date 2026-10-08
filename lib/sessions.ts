@@ -6,6 +6,7 @@
  */
 
 import type { DetailSource, QueryResponse } from "./api";
+import type { Lang } from "./languages";
 
 export type TurnStatus = "recording" | "transcribing" | "loading" | "done" | "error";
 
@@ -44,6 +45,9 @@ export interface ChatSession {
   /** Mode choisi (ou deduit de la 1re question) : en « voice », la zone de
    * saisie est remplacee par un grand bouton micro. */
   mode?: ChatMode;
+  /** Langue de la discussion : choisie a la 1re question, elle reste la meme pour les
+   * suivantes tant que l'utilisateur n'en change pas, et revient en rouvrant la discussion. */
+  lang?: Lang;
   /** Titre choisi par l'utilisateur : plus jamais remplace par le titre automatique. */
   renamed?: boolean;
   turns: Turn[];

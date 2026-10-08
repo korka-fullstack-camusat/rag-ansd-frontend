@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { BookOpen, Check, Copy, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2, X } from "lucide-react";
+import { BookOpen, Check, Copy, Info, Loader2, Pause, RotateCcw, Volume2, X } from "lucide-react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { LanguagePicker } from "@/components/chat/LanguagePicker";
 import { Composer } from "@/components/chat/Composer";
 import { SourceLinks } from "@/components/chat/SourceLinks";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
@@ -59,9 +60,6 @@ export default function AccueilPage() {
   );
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
-  // Mode choisi sur l'accueil, avant la 1re question (null = pas encore
-  // choisi : on s'adaptera a ce que l'utilisateur commence a faire).
-  const [heroMode, setHeroMode] = useState<ChatMode | null>(null);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
   // « Voir plus » : echanges deplies, en cours de chargement, ou en erreur.
@@ -79,6 +77,8 @@ export default function AccueilPage() {
     const stored = loadSessions();
     setSessions(stored.sessions);
     setActiveId(stored.activeId);
+    const active = stored.sessions.find((s) => s.id === stored.activeId);
+    if (active?.lang) setLang(active.lang);
     setHydrated(true);
   }, []);
 
@@ -137,6 +137,7 @@ export default function AccueilPage() {
       createdAt: now,
       updatedAt: now,
       mode: turn.origin ?? "text",
+      lang,
       turns: [turn],
     };
     setSessions((all) => [session, ...all]);
@@ -297,14 +298,6 @@ export default function AccueilPage() {
     setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, mode } : s)));
   }
 
-  /** Choix du mode sur l'accueil. « Parler » lance directement l'ecoute. */
-  function chooseHeroMode(mode: ChatMode) {
-    setHeroMode(mode);
-    setVoiceNotice(null);
-    if (mode === "voice") void handleMicClick();
-    else setTimeout(() => heroInputRef.current?.focus(), 0);
-  }
-
   /** Pressing the mic drops straight into the conversation view — a
    * "recording" turn is added immediately (flipping `turns.length` from 0
    * to 1 is exactly what already switches the layout below from the hero
@@ -386,7 +379,6 @@ export default function AccueilPage() {
   function handleNewChat() {
     leaveConversation();
     setActiveId(null);
-    setHeroMode(null);
     setVoiceNotice(null);
   }
 
@@ -394,6 +386,16 @@ export default function AccueilPage() {
     if (id === activeId) return;
     leaveConversation();
     setActiveId(id);
+    // Rouvrir une discussion rend sa langue : les questions suivantes y restent.
+    const session = sessions.find((s) => s.id === id);
+    if (session?.lang) setLang(session.lang);
+  }
+
+  /** Changement de langue (menu de l'en-tete ou choix de l'accueil) : valable pour la
+   * discussion ouverte et pour toutes ses questions suivantes. */
+  function changeLang(next: Lang) {
+    setLang(next);
+    if (activeId) setSessions((all) => all.map((s) => (s.id === activeId ? { ...s, lang: next } : s)));
   }
 
   /** Renommage depuis la barre laterale : le titre choisi est conserve
@@ -470,9 +472,10 @@ export default function AccueilPage() {
     <div className="accueil-shell fixed inset-0 z-20 flex flex-col overflow-hidden bg-white">
       <ChatHeader
         lang={lang}
-        onLangChange={setLang}
+        onLangChange={changeLang}
         onNewChat={handleNewChat}
         showNewChat={turns.length > 0}
+        showLanguage={turns.length > 0}
         onToggleSidebar={hasHistory ? handleToggleSidebar : undefined}
         sidebarOpen={hasHistory && desktopSidebarOpen}
       />
@@ -523,55 +526,11 @@ export default function AccueilPage() {
                   >
                     Posez votre question en{" "}
                     <span className="font-sans font-semibold text-brand-700">
-                      français, wolof, anglais, pulaar, sérère ou diola
+                      français, wolof ou anglais
                     </span>
                     . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
                   </motion.p>
 
-                  {/* Choix du mode de discussion. Sans choix, la zone de saisie
-                      ci-dessous reste utilisable : on s'adapte a ce que
-                      l'utilisateur commence (taper, ou toucher le micro). */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.7 }}
-                    className="grid w-full grid-cols-2 gap-3"
-                    role="group"
-                    aria-label="Comment voulez-vous poser votre question ?"
-                  >
-                    {(
-                      [
-                        { mode: "text", icon: PenLine, label: "Écrire", hint: "Je tape ma question" },
-                        { mode: "voice", icon: Mic, label: "Parler", hint: "Je pose ma question à voix haute" },
-                      ] as const
-                    ).map(({ mode, icon: Icon, label, hint }) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => chooseHeroMode(mode)}
-                        aria-pressed={heroMode === mode}
-                        className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-4 text-center shadow-sm transition-all sm:flex-row sm:gap-3 sm:px-5 sm:text-left",
-                          heroMode === mode
-                            ? "border-brand-400 bg-brand-50 ring-2 ring-brand-200"
-                            : "border-slate-200 bg-white/80 hover:border-brand-300 hover:bg-brand-50/50"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                            heroMode === mode ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-600"
-                          )}
-                        >
-                          <Icon size={20} />
-                        </span>
-                        <span className="flex flex-col">
-                          <span className="text-[15px] font-bold text-brand-900">{label}</span>
-                          <span className="text-xs text-slate-500">{hint}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </motion.div>
                   </>
                 ) : (
                   <motion.h1
@@ -583,37 +542,29 @@ export default function AccueilPage() {
                   </motion.h1>
                 )}
 
+                {/* Choix de la langue, au centre et bien visible (le menu de l'en-tete
+                    n'apparait qu'une fois la conversation commencee). */}
+                <LanguagePicker value={lang} onChange={changeLang} delay={firstVisit ? 0.7 : 0.05} />
+
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: firstVisit ? 0.8 : 0.1 }}
                   className="w-full"
                 >
-                  {heroMode === "voice" ? (
-                    <VoiceButton
-                      listening={listening}
-                      disabled={isBusy}
-                      onClick={handleMicClick}
-                      onSwitchToText={() => chooseHeroMode("text")}
-                      notice={voiceNotice}
-                    />
-                  ) : (
-                    <>
-                      <Composer
-                        variant="hero"
-                        placeholder="Posez une question…"
-                        value={input}
-                        onChange={setInput}
-                        onSubmit={() => handleAsk(input)}
-                        listening={listening}
-                        onMicClick={handleMicClick}
-                        disabled={isBusy}
-                        inputRef={heroInputRef}
-                        autoFocus={!firstVisit}
-                      />
-                      {voiceNotice && <p className="mt-2 text-xs text-red-600">{voiceNotice}</p>}
-                    </>
-                  )}
+                  <Composer
+                    variant="hero"
+                    placeholder="Posez une question…"
+                    value={input}
+                    onChange={setInput}
+                    onSubmit={() => handleAsk(input)}
+                    listening={listening}
+                    onMicClick={handleMicClick}
+                    disabled={isBusy}
+                    inputRef={heroInputRef}
+                    autoFocus={!firstVisit}
+                  />
+                  {voiceNotice && <p className="mt-2 text-xs text-red-600">{voiceNotice}</p>}
                 </motion.div>
               </div>
             </div>
@@ -730,6 +681,8 @@ export default function AccueilPage() {
                                 Explication détaillée
                               </button>
 
+                              {/* « Écouter » : seulement en mode vocal, pas quand on a choisi d'écrire */}
+                              {activeSession?.mode === "voice" && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -753,6 +706,7 @@ export default function AccueilPage() {
                                   return "Écouter";
                                 })()}
                               </button>
+                              )}
 
                               <CopyButton answer={turn.response.answer} citations={turn.response.citations} />
                             </div>

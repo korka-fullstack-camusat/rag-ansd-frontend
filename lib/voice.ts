@@ -73,8 +73,15 @@ function recognitionCtor(): (new () => BrowserRecognition) | null {
 /** Vrai si l'on peut poser une question a voix haute dans cette langue sur
  * ce navigateur. */
 export function isVoiceInputAvailable(language: VoiceLanguage): boolean {
+  // Wolof : pas de reconnaissance dans le navigateur ; on enregistre le micro et le
+  // backend transcrit (Soynade, /api/voice/transcribe).
+  if (BACKEND_ASR_LANGUAGES.includes(language)) {
+    return typeof MediaRecorder !== "undefined" && typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+  }
   return !!recognitionCtor() && !!RECOGNITION_LANG[language];
 }
+
+const BACKEND_ASR_LANGUAGES: VoiceLanguage[] = ["wo"];
 
 export const VOICE_INPUT_UNAVAILABLE_MESSAGE =
   "La question à voix haute n'est pas encore disponible dans cette langue ou sur ce navigateur. Utilisez Chrome, Edge ou Safari, en français ou en anglais.";
