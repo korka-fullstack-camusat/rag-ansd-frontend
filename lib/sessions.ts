@@ -42,6 +42,8 @@ export interface ChatSession {
   /** Mode choisi (ou deduit de la 1re question) : en « voice », la zone de
    * saisie est remplacee par un grand bouton micro. */
   mode?: ChatMode;
+  /** Titre choisi par l'utilisateur : plus jamais remplace par le titre automatique. */
+  renamed?: boolean;
   turns: Turn[];
 }
 

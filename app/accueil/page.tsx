@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Info, Loader2, Mic, Pause, PenLine, RotateCcw, Volume2 } from "lucide-react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
 import { CitationCard } from "@/components/chat/CitationCard";
@@ -11,6 +11,7 @@ import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { HeroTitle } from "@/components/chat/HeroTitle";
 import { RichText } from "@/components/chat/RichText";
 import { cn } from "@/lib/utils";
+import { copyAnswer } from "@/lib/copy";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { VoiceButton } from "@/components/chat/VoiceButton";
 import { LANG_TO_API, type Lang } from "@/lib/languages";
@@ -20,10 +21,13 @@ import {
   explainAnswer,
   fetchSources,
   trackEvent,
+  sourcesOf,
   suggestTitle,
+  type HistoryTurn,
   GENERIC_ERROR_MESSAGE,
   type Citation,
   type Language,
+  type QueryResponse,
   type SourceDocument,
 } from "@/lib/api";
 import {
@@ -120,7 +124,9 @@ export default function AccueilPage() {
    * backend (1 a 3 mots). En cas d'echec, le titre provisoire reste. */
   function refineTitle(sessionId: string, question: string) {
     suggestTitle(question, { sessionId })
-      .then((title) => setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, title } : s))))
+      .then((title) =>
+        setSessions((all) => all.map((s) => (s.id === sessionId && !s.renamed ? { ...s, title } : s)))
+      )
       .catch(() => {});
   }
 
@@ -150,15 +156,64 @@ export default function AccueilPage() {
     return sessionId;
   }
 
+  /** Vrai si tous les echanges precedents de la discussion etaient de la
+   * conversation courante (« Bonjour ») — le titre doit alors etre refait. */
+  function isFirstRealQuestion(sessionId: string, turnId: string): boolean {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return false;
+    const before = session.turns.filter((t) => t.id !== turnId);
+    return before.length > 0 && before.every((t) => t.response?.kind === "chat");
+  }
+
+  /** Deux derniers echanges de la discussion (avec leurs sources) :
+   * permet les questions de suite (« donne-moi les chiffres », « et en 2024 ? »). */
+  function historyFor(sessionId: string, turnId: string): HistoryTurn[] {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return [];
+    // Echanges qui PRECEDENT celui-ci (une question relancee garde son contexte d'origine).
+    const index = session.turns.findIndex((t) => t.id === turnId);
+    const before = index >= 0 ? session.turns.slice(0, index) : session.turns;
+    // Echanges sans donnees inclus : apres « et pour 2026 ? » (sans donnees), « et 2025 ? »
+    // doit garder le meme sujet. La conversation courante (« Bonjour ») est ignoree.
+    return before
+      .filter((t) => t.status === "done" && t.response && t.response.kind !== "chat")
+      .slice(-2)
+      // Question telle que comprise par le backend (deja autonome) : une suite de
+      // demandes de forme (« en liste » puis « en tableau ») garde le bon sujet.
+      .map((t) => ({
+        question: t.response!.standalone_question ?? t.question,
+        answer: t.response!.answer,
+        sources: sourcesOf(t.response!),
+      }));
+  }
+
   /** `origin` : une question posee a voix haute recoit une reponse lue
    * automatiquement ; une question ecrite, une reponse ecrite (avec le
    * bouton « Écouter »). */
-  async function runQuery(sessionId: string, turnId: string, question: string, origin: ChatMode = "text") {
+  async function runQuery(
+    sessionId: string,
+    turnId: string,
+    question: string,
+    origin: ChatMode = "text",
+    regenerate = false
+  ) {
     try {
-      const response = await askQuestion(question, LANG_TO_API[lang], { sessionId, mode: origin });
+      const response = await askQuestion(
+        question,
+        LANG_TO_API[lang],
+        { sessionId, mode: origin, regenerate },
+        historyFor(sessionId, turnId)
+      );
       patchTurn(sessionId, turnId, { status: "done", response });
+      // Discussion ouverte par « Bonjour » : le titre vient de la premiere vraie question.
+      if (response.kind !== "chat" && isFirstRealQuestion(sessionId, turnId)) {
+        setSessions((all) =>
+          all.map((s) => (s.id === sessionId && !s.renamed ? { ...s, title: quickTitle(question) } : s))
+        );
+        refineTitle(sessionId, question);
+      }
       if (origin === "voice") void handleListen(turnId, response.answer, response.language as VoiceLanguage);
-      if (response.answered) void loadDetails(sessionId, turnId, question, response.answer, response.language);
+      if (response.answered) void loadDetails(sessionId, turnId, question, response);
     } catch (err) {
       patchTurn(sessionId, turnId, {
         status: "error",
@@ -179,11 +234,19 @@ export default function AccueilPage() {
   /** Prepare l'explication detaillee (« Voir plus ») en arriere-plan, des
    * que la reponse courte est arrivee : au clic, elle est le plus souvent
    * deja la, sans attente. Le resultat est stocke dans l'echange. */
-  async function loadDetails(sessionId: string, turnId: string, question: string, answer: string, language: string) {
+  async function loadDetails(sessionId: string, turnId: string, question: string, response: QueryResponse) {
     setDetailsLoading((set) => new Set(set).add(turnId));
     setDetailsError(({ [turnId]: _old, ...rest }) => rest);
     try {
-      const details = await explainAnswer(question, answer, language as Language, { sessionId });
+      // Question reformulee (questions de suite) et sources de la reponse : l'explication
+      // porte sur la meme chose et s'appuie sur les memes documents.
+      const details = await explainAnswer(
+        response.standalone_question ?? question,
+        response.answer,
+        response.language as Language,
+        { sessionId },
+        sourcesOf(response)
+      );
       patchTurn(sessionId, turnId, { details });
     } catch (err) {
       setDetailsError((e) => ({ ...e, [turnId]: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE }));
@@ -211,7 +274,7 @@ export default function AccueilPage() {
     });
     if (open) trackEvent("details_open", { sessionId: activeSession.id });
     if (open && !turn.details && !detailsLoading.has(turnId)) {
-      void loadDetails(activeSession.id, turnId, turn.question, turn.response.answer, turn.response.language);
+      void loadDetails(activeSession.id, turnId, turn.question, turn.response);
     }
   }
 
@@ -221,6 +284,29 @@ export default function AccueilPage() {
     if (!activeSession || isBusy || !turn.question) return;
     patchTurn(activeSession.id, turn.id, { status: "loading", error: undefined, interrupted: false });
     void runQuery(activeSession.id, turn.id, turn.question, turn.origin ?? "text");
+  }
+
+  /** « Relancer » : repose la meme question pour obtenir une nouvelle reponse
+   * (le backend ignore alors son cache), au meme endroit de la discussion. */
+  function handleRegenerate(turn: Turn) {
+    if (!activeSession || isBusy || !turn.question) return;
+    if (speaking?.turnId === turn.id) {
+      speechControllerRef.current?.cancel();
+      setSpeaking(null);
+    }
+    setExpanded((set) => {
+      const next = new Set(set);
+      next.delete(turn.id);
+      return next;
+    });
+    patchTurn(activeSession.id, turn.id, {
+      status: "loading",
+      response: undefined,
+      details: undefined,
+      error: undefined,
+      interrupted: false,
+    });
+    void runQuery(activeSession.id, turn.id, turn.question, turn.origin ?? "text", true);
   }
 
   /** Change le mode de la discussion affichee (« Écrire plutôt » / micro). */
@@ -292,7 +378,9 @@ export default function AccueilPage() {
       onResult: (text) => {
         patchTurn(sessionId, id, { question: text, status: "loading" });
         if (createsSession) {
-          setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, title: quickTitle(text) } : s)));
+          setSessions((all) =>
+            all.map((s) => (s.id === sessionId && !s.renamed ? { ...s, title: quickTitle(text) } : s))
+          );
           refineTitle(sessionId, text);
         }
         void runQuery(sessionId, id, text, "voice");
@@ -325,6 +413,14 @@ export default function AccueilPage() {
     if (id === activeId) return;
     leaveConversation();
     setActiveId(id);
+  }
+
+  /** Renommage depuis la barre laterale : le titre choisi est conserve
+   * (le titre automatique ne le remplacera plus). */
+  function handleRenameSession(id: string, title: string) {
+    const clean = title.replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!clean) return;
+    setSessions((all) => all.map((s) => (s.id === id ? { ...s, title: clean, renamed: true } : s)));
   }
 
   function handleDeleteSession(id: string) {
@@ -409,6 +505,7 @@ export default function AccueilPage() {
             onSelect={handleSelectSession}
             onNew={handleNewChat}
             onDelete={handleDeleteSession}
+            onRename={handleRenameSession}
             desktopOpen={desktopSidebarOpen}
             mobileOpen={mobileSidebarOpen}
             onMobileClose={() => setMobileSidebarOpen(false)}
@@ -543,7 +640,7 @@ export default function AccueilPage() {
           ) : (
             <>
               <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6 sm:px-6 sm:py-8">
+                <div className="flex w-full flex-col gap-8 px-4 py-6 sm:px-12 sm:py-8 lg:px-24 xl:px-36 2xl:px-48">
                   {turns.map((turn) => (
                     <div key={turn.id} className="flex flex-col gap-3">
                       <div className="flex justify-end">
@@ -579,8 +676,14 @@ export default function AccueilPage() {
                             </div>
                           ) : (
                             turn.question && (
-                              <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
-                                {turn.question}
+                              <div className="flex items-center gap-2">
+                                <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
+                                  {turn.question}
+                                </div>
+                                {/* « Relancer » a droite de la question (reponse deja recue, hors « Bonjour »…) */}
+                                {turn.status === "done" && turn.response?.kind !== "chat" && (
+                                  <RegenerateButton onClick={() => handleRegenerate(turn)} disabled={isBusy} />
+                                )}
                               </div>
                             )
                           )}
@@ -612,7 +715,12 @@ export default function AccueilPage() {
                           </div>
                         )}
 
-                        {turn.status === "done" && turn.response && !turn.response.answered && (
+                        {turn.status === "done" && turn.response?.kind === "chat" && (
+                          // Conversation courante (« Bonjour ! », « Avec plaisir ! ») : texte simple.
+                          <p className="font-serif text-[17px] leading-[1.7] text-slate-800">{turn.response.answer}</p>
+                        )}
+
+                        {turn.status === "done" && turn.response && !turn.response.answered && turn.response.kind !== "chat" && (
                           // Donnees non couvertes par les publications indexees : un message simple, rien d'autre.
                           <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] leading-relaxed text-slate-600">
                             <Info size={18} className="mt-0.5 shrink-0 text-slate-400" />
@@ -665,6 +773,8 @@ export default function AccueilPage() {
                                   return "Écouter";
                                 })()}
                               </button>
+
+                              <CopyButton answer={turn.response.answer} citations={turn.response.citations} />
                             </div>
 
                             <AnimatePresence initial={false}>
@@ -678,7 +788,17 @@ export default function AccueilPage() {
                                 >
                                   <div className="rounded-xl border-l-[3px] border-brand-300 bg-brand-50/50 px-4 py-3 text-[15px] leading-relaxed text-slate-700">
                                     {turn.details ? (
-                                      <RichText text={turn.details} />
+                                      <div className="flex flex-col gap-3">
+                                        <RichText text={turn.details} />
+                                        <div className="flex justify-end">
+                                          <CopyButton
+                                            answer={turn.details}
+                                            citations={turn.response.citations}
+                                            label="Copier l'explication"
+                                            small
+                                          />
+                                        </div>
+                                      </div>
                                     ) : detailsError[turn.id] && !detailsLoading.has(turn.id) ? (
                                       <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
                                         {detailsError[turn.id]}
@@ -686,7 +806,7 @@ export default function AccueilPage() {
                                           type="button"
                                           onClick={() =>
                                             activeSession &&
-                                            loadDetails(activeSession.id, turn.id, turn.question, turn.response!.answer, turn.response!.language)
+                                            loadDetails(activeSession.id, turn.id, turn.question, turn.response!)
                                           }
                                           className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-900"
                                         >
@@ -727,8 +847,8 @@ export default function AccueilPage() {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-slate-100 bg-white/80 px-4 py-3 backdrop-blur-xl sm:px-6 sm:py-4">
-                <div className="mx-auto w-full max-w-3xl">
+              <div className="shrink-0 border-t border-slate-100 bg-white/80 px-4 py-3 backdrop-blur-xl sm:px-12 sm:py-4 lg:px-24 xl:px-36 2xl:px-48">
+                <div className="w-full">
                   {activeSession?.mode === "voice" ? (
                     <VoiceButton
                       size="compact"
@@ -776,5 +896,66 @@ export default function AccueilPage() {
           element instead, since several of those can coexist on screen. */}
       <audio ref={audioElRef} hidden />
     </div>
+  );
+}
+
+/** « Relancer » : obtenir une nouvelle reponse a la meme question (icone a
+ * cote de la bulle de la question). */
+function RegenerateButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title="Relancer la question"
+      aria-label="Relancer la question pour obtenir une nouvelle réponse"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
+    >
+      <RotateCcw size={15} />
+    </button>
+  );
+}
+
+/** « Copier » : copie la reponse (ou l'explication detaillee) dans le format
+ * affiche (liste, tableau…), avec le lien vers ses sources. */
+function CopyButton({
+  answer,
+  citations,
+  label = "Copier",
+  small,
+}: {
+  answer: string;
+  citations: Citation[];
+  label?: string;
+  small?: boolean;
+}) {
+  const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+
+  async function copy() {
+    try {
+      await copyAnswer(answer, citations);
+      setState("copied");
+    } catch {
+      setState("error");
+    }
+    setTimeout(() => setState("idle"), 2000);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={label === "Copier" ? "Copier la réponse" : label}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border font-semibold transition-colors",
+        small ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
+        state === "copied"
+          ? "border-brand-300 bg-brand-50 text-brand-700"
+          : "border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
+      )}
+    >
+      {state === "copied" ? <Check size={small ? 14 : 16} /> : <Copy size={small ? 14 : 16} />}
+      <span aria-live="polite">{state === "copied" ? "Copié" : state === "error" ? "Échec de la copie" : label}</span>
+    </button>
   );
 }

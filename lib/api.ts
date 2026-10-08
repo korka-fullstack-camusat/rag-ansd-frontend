@@ -12,6 +12,8 @@ export type Language = "fr" | "wo" | "en" | "ff" | "srr" | "dyo";
 export interface Citation {
   document_id: string;
   document_title: string;
+  /** Adresse officielle du PDF sur ansd.sn (absente des reponses plus anciennes). */
+  url?: string | null;
   quote: string;
   page_start: number | null;
   page_end: number | null;
@@ -30,6 +32,12 @@ export interface Usage {
 
 export interface QueryResponse {
   question: string;
+  /** Question de suite reformulee de maniere autonome par le backend (ex.
+   * « et en 2024 ? » → « Quelle est la croissance du PIB en 2024 ? »). */
+  standalone_question?: string | null;
+  /** answer : reponse tiree des publications ; no_data : rien dans le corpus ;
+   * chat : conversation courante (« bonjour », « merci »…). */
+  kind?: "answer" | "no_data" | "chat";
   language: string;
   answered: boolean;
   answer: string;
@@ -85,11 +93,31 @@ function clientId(): string | undefined {
 }
 
 /** Contexte d'usage joint aux appels (statistiques du tableau de bord). */
+/** Source d'une reponse (document + page), renvoyee au backend pour que les
+ * questions de suite et « Voir plus » cherchent d'abord la. */
+export interface SourceRef {
+  title: string;
+  page: number | null;
+}
+
+/** Echange precedent de la discussion, envoye avec une question de suite. */
+export interface HistoryTurn {
+  question: string;
+  answer: string;
+  sources: SourceRef[];
+}
+
+export function sourcesOf(response: QueryResponse): SourceRef[] {
+  return response.citations.map((c) => ({ title: c.document_title, page: c.page_start }));
+}
+
 export interface UsageContext {
   /** Discussion a laquelle appartient l'appel. */
   sessionId?: string;
   /** Question posee a l'ecrit ou a voix haute. */
   mode?: "text" | "voice";
+  /** « Relancer » : nouvelle reponse plutot que celle deja en cache. */
+  regenerate?: boolean;
 }
 
 function jsonHeaders(ctx?: UsageContext): Record<string, string> {
@@ -110,13 +138,24 @@ async function readErrorDetail(res: Response): Promise<string> {
   return GENERIC_ERROR_MESSAGE;
 }
 
-export async function askQuestion(question: string, language: Language, ctx?: UsageContext): Promise<QueryResponse> {
+export async function askQuestion(
+  question: string,
+  language: Language,
+  ctx?: UsageContext,
+  history?: HistoryTurn[]
+): Promise<QueryResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/query`, {
       method: "POST",
       headers: jsonHeaders(ctx),
-      body: JSON.stringify({ question, language, mode: ctx?.mode ?? "text" }),
+      body: JSON.stringify({
+        question,
+        language,
+        mode: ctx?.mode ?? "text",
+        history: history ?? [],
+        regenerate: ctx?.regenerate ?? false,
+      }),
     });
   } catch {
     throw new ApiError(GENERIC_ERROR_MESSAGE);
@@ -133,14 +172,15 @@ export async function explainAnswer(
   question: string,
   answer: string,
   language: Language,
-  ctx?: UsageContext
+  ctx?: UsageContext,
+  sources: SourceRef[] = []
 ): Promise<string> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/explain`, {
       method: "POST",
       headers: jsonHeaders(ctx),
-      body: JSON.stringify({ question, answer, language }),
+      body: JSON.stringify({ question, answer, language, sources }),
     });
   } catch {
     throw new ApiError(GENERIC_ERROR_MESSAGE);

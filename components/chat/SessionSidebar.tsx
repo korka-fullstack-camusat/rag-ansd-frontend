@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { MessageSquare, Search, SquarePen, Trash2, X } from "lucide-react";
+import { MessageSquare, Pencil, Search, SquarePen, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { groupSessions, sessionMatches, type ChatSession } from "@/lib/sessions";
 
@@ -12,10 +12,54 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => void;
 }
 
-function SidebarContent({ sessions, activeId, onSelect, onNew, onDelete, onClose }: SidebarProps & { onClose?: () => void }) {
+/** Champ de renommage en place : Entree ou clic ailleurs = valider, Echap = annuler. */
+function RenameInput({ initial, onDone }: { initial: string; onDone: (title: string | null) => void }) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  function finish(title: string | null) {
+    if (done.current) return;
+    done.current = true;
+    onDone(title);
+  }
+
+  return (
+    <input
+      ref={ref}
+      value={value}
+      maxLength={60}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") finish(value);
+        if (e.key === "Escape") finish(null);
+      }}
+      onBlur={() => finish(value)}
+      aria-label="Nouveau titre de la discussion"
+      className="w-full rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-semibold text-brand-900 shadow-sm outline-none ring-2 ring-brand-100"
+    />
+  );
+}
+
+function SidebarContent({
+  sessions,
+  activeId,
+  onSelect,
+  onNew,
+  onDelete,
+  onRename,
+  onClose,
+}: SidebarProps & { onClose?: () => void }) {
   const [query, setQuery] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const groups = groupSessions(sessions.filter((s) => sessionMatches(s, query)));
 
   return (
@@ -78,15 +122,31 @@ function SidebarContent({ sessions, activeId, onSelect, onNew, onDelete, onClose
             <ul className="flex flex-col gap-0.5">
               {group.sessions.map((s) => {
                 const active = s.id === activeId;
+                if (editingId === s.id) {
+                  return (
+                    <li key={s.id} className="px-0.5 py-0.5">
+                      <RenameInput
+                        initial={s.title}
+                        onDone={(title) => {
+                          setEditingId(null);
+                          if (title !== null) onRename(s.id, title);
+                        }}
+                      />
+                    </li>
+                  );
+                }
+                // Toujours visibles sur ecran tactile (pas de survol) et pour la discussion active
+                const actionVisibility = active ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100";
                 return (
                   <li key={s.id} className="group relative">
                     <button
                       type="button"
                       onClick={() => onSelect(s.id)}
+                      onDoubleClick={() => setEditingId(s.id)}
                       aria-current={active ? "page" : undefined}
-                      title={s.title}
+                      title={`${s.title} — double-clic pour renommer`}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-9 text-left text-sm transition-colors",
+                        "flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-16 text-left text-sm transition-colors",
                         active
                           ? "bg-brand-100/70 font-semibold text-brand-900"
                           : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
@@ -95,20 +155,34 @@ function SidebarContent({ sessions, activeId, onSelect, onNew, onDelete, onClose
                       <MessageSquare size={14} className={cn("shrink-0", active ? "text-brand-600" : "text-slate-400")} />
                       <span className="truncate">{s.title}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Supprimer la discussion « ${s.title} » ?`)) onDelete(s.id);
-                      }}
-                      aria-label={`Supprimer la discussion « ${s.title} »`}
-                      className={cn(
-                        "absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-red-600 focus-visible:opacity-100",
-                        // Toujours visible sur ecran tactile (pas de survol) et pour la discussion active
-                        active ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                      )}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(s.id)}
+                        aria-label={`Renommer la discussion « ${s.title} »`}
+                        title="Renommer"
+                        className={cn(
+                          "flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-brand-700 focus-visible:opacity-100",
+                          actionVisibility
+                        )}
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Supprimer la discussion « ${s.title} » ?`)) onDelete(s.id);
+                        }}
+                        aria-label={`Supprimer la discussion « ${s.title} »`}
+                        title="Supprimer"
+                        className={cn(
+                          "flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-red-600 focus-visible:opacity-100",
+                          actionVisibility
+                        )}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </li>
                 );
               })}

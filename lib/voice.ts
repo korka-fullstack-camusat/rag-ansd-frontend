@@ -219,6 +219,10 @@ function plainText(text: string): string {
     .replace(/\s*[[(]\s*Sources?\s*\d+[^\])]*[\])]/gi, "")
     .replace(/\*\*|__|#{1,6}\s+/g, "")
     .replace(/^\s*[-*•]\s+/gm, "")
+    // Tableaux : ligne de separation supprimee, cellules lues comme une enumeration.
+    .replace(/^\s*\|?\s*:?-{2,}.*$/gm, "")
+    .replace(/^\s*\|\s*|\s*\|\s*$/gm, "")
+    .replace(/\s*\|\s*/g, ", ")
     .trim();
 }
 
