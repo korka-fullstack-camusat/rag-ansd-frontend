@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { copyAnswer } from "@/lib/copy";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { VoiceButton } from "@/components/chat/VoiceButton";
-import { LANG_TO_API, newChatPrompt, type Lang } from "@/lib/languages";
+import { LANG_TO_API, loadPreferredLang, newChatPrompt, savePreferredLang, type Lang } from "@/lib/languages";
 import {
   ApiError,
   askQuestion,
@@ -78,7 +78,8 @@ export default function AccueilPage() {
     setSessions(stored.sessions);
     setActiveId(stored.activeId);
     const active = stored.sessions.find((s) => s.id === stored.activeId);
-    if (active?.lang) setLang(active.lang);
+    const preferred = active?.lang ?? loadPreferredLang();
+    if (preferred) setLang(preferred);
     setHydrated(true);
   }, []);
 
@@ -395,6 +396,7 @@ export default function AccueilPage() {
    * discussion ouverte et pour toutes ses questions suivantes. */
   function changeLang(next: Lang) {
     setLang(next);
+    savePreferredLang(next);
     if (activeId) setSessions((all) => all.map((s) => (s.id === activeId ? { ...s, lang: next } : s)));
   }
 
@@ -475,7 +477,9 @@ export default function AccueilPage() {
         onLangChange={changeLang}
         onNewChat={handleNewChat}
         showNewChat={turns.length > 0}
-        showLanguage={turns.length > 0}
+        // Langue en haut a droite des que le choix initial est fait : pendant une
+        // conversation, et sur une nouvelle discussion (ou elle reste modifiable).
+        showLanguage={!firstVisit || turns.length > 0}
         onToggleSidebar={hasHistory ? handleToggleSidebar : undefined}
         sidebarOpen={hasHistory && desktopSidebarOpen}
       />
@@ -542,9 +546,9 @@ export default function AccueilPage() {
                   </motion.h1>
                 )}
 
-                {/* Choix de la langue, au centre et bien visible (le menu de l'en-tete
-                    n'apparait qu'une fois la conversation commencee). */}
-                <LanguagePicker value={lang} onChange={changeLang} delay={firstVisit ? 0.7 : 0.05} />
+                {/* Grand choix de la langue : premiere visite seulement. Ensuite, la langue
+                    se change depuis le menu en haut a droite. */}
+                {firstVisit && <LanguagePicker value={lang} onChange={changeLang} delay={0.7} />}
 
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}

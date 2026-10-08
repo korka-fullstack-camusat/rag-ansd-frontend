@@ -45,3 +45,24 @@ export const NEW_CHAT_PROMPT: Record<Lang, string | null> = {
 export function newChatPrompt(lang: Lang): string {
   return NEW_CHAT_PROMPT[lang] ?? (NEW_CHAT_PROMPT.FR as string);
 }
+
+const PREFERRED_LANG_KEY = "ansd-rag:lang";
+
+/** Derniere langue choisie (premiere visite ou menu de l'en-tete) : une nouvelle
+ * discussion s'ouvre dans cette langue, meme apres un rechargement. */
+export function loadPreferredLang(): Lang | null {
+  try {
+    const value = localStorage.getItem(PREFERRED_LANG_KEY);
+    return value && (LANGS as string[]).includes(value) ? (value as Lang) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePreferredLang(lang: Lang): void {
+  try {
+    localStorage.setItem(PREFERRED_LANG_KEY, lang);
+  } catch {
+    // stockage indisponible : la langue reste valable pour la visite en cours
+  }
+}
