@@ -1,5 +1,6 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import { motion } from "motion/react";
 import { Keyboard, Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ export function VoiceButton({
   notice?: string | null;
   size?: "large" | "compact";
 }) {
+  const t = useUi();
   const large = size === "large";
   return (
     <div className="flex flex-col items-center gap-2.5">
@@ -42,7 +44,7 @@ export function VoiceButton({
           onClick={onClick}
           disabled={disabled && !listening}
           whileTap={{ scale: 0.94 }}
-          aria-label={listening ? "Arrêter et envoyer la question" : "Poser ma question à voix haute"}
+          aria-label={listening ? t("stopAndSend") : t("speakQuestion")}
           aria-pressed={listening}
           className={cn(
             "relative flex items-center justify-center rounded-full text-white shadow-glow transition-colors disabled:opacity-40",
@@ -55,7 +57,7 @@ export function VoiceButton({
       </div>
 
       <p className="text-sm font-medium text-slate-500" aria-live="polite">
-        {listening ? "Je vous écoute… touchez pour envoyer" : "Touchez pour parler"}
+        {listening ? t("listeningTap") : t("tapToSpeak")}
       </p>
 
       {notice && <p className="max-w-sm text-center text-xs text-red-600">{notice}</p>}
@@ -67,7 +69,7 @@ export function VoiceButton({
           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-700"
         >
           <Keyboard size={14} />
-          Écrire plutôt
+          {t("writeInstead")}
         </button>
       )}
     </div>

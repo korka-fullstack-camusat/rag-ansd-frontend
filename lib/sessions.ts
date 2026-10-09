@@ -143,17 +143,24 @@ export function saveSessions(sessions: ChatSession[], activeId: string | null): 
 
 export type SessionGroup = { label: string; sessions: ChatSession[] };
 
-/** Regroupement facon ChatGPT : Aujourd'hui / Hier / 7 derniers jours / Plus ancien. */
-export function groupSessions(sessions: ChatSession[], now = Date.now()): SessionGroup[] {
+export type GroupLabels = { today: string; yesterday: string; last7Days: string; older: string };
+
+/** Regroupement facon ChatGPT : Aujourd'hui / Hier / 7 derniers jours / Plus ancien (libelles
+ * dans la langue de l'interface). */
+export function groupSessions(
+  sessions: ChatSession[],
+  now = Date.now(),
+  labels: GroupLabels = { today: "Aujourd'hui", yesterday: "Hier", last7Days: "7 derniers jours", older: "Plus ancien" }
+): SessionGroup[] {
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
   const today = startOfToday.getTime();
   const day = 24 * 60 * 60 * 1000;
   const groups: SessionGroup[] = [
-    { label: "Aujourd'hui", sessions: [] },
-    { label: "Hier", sessions: [] },
-    { label: "7 derniers jours", sessions: [] },
-    { label: "Plus ancien", sessions: [] },
+    { label: labels.today, sessions: [] },
+    { label: labels.yesterday, sessions: [] },
+    { label: labels.last7Days, sessions: [] },
+    { label: labels.older, sessions: [] },
   ];
   for (const s of [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)) {
     if (s.updatedAt >= today) groups[0].sessions.push(s);

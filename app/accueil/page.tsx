@@ -1,5 +1,6 @@
 "use client";
 
+import { UiLangProvider, setUiLanguage, uiText, useUi, type UiKey } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { BookOpen, Check, Copy, Info, Loader2, Pause, RotateCcw, Volume2, X } from "lucide-react";
@@ -34,7 +35,7 @@ import {
   captureVoice,
   isVoiceInputAvailable,
   speakText,
-  VOICE_INPUT_UNAVAILABLE_MESSAGE,
+  voiceInputUnavailableMessage,
   type CaptureController,
   type SpeechController,
   type VoiceLanguage,
@@ -43,10 +44,11 @@ import { loadSessions, quickTitle, saveSessions, type ChatMode, type ChatSession
 
 /** Titre provisoire d'une discussion lancee au micro, remplace par la
  * transcription des qu'elle arrive. */
-const VOICE_TITLE = "Question vocale";
 
 export default function AccueilPage() {
   const [lang, setLang] = useState<Lang>("FR");
+  // Langue de l'interface : messages hors composants (micro, lecture audio) et attribut lang de la page.
+  useEffect(() => setUiLanguage(lang), [lang]);
   const [input, setInput] = useState("");
   // Discussions (voir lib/sessions.ts) : enregistrees dans le navigateur a
   // chaque changement, rechargees au montage. `activeId === null` = accueil
@@ -129,7 +131,7 @@ export default function AccueilPage() {
   /** Remplace le titre provisoire d'une discussion par le titre court du
    * backend (1 a 3 mots). En cas d'echec, le titre provisoire reste. */
   function refineTitle(sessionId: string, question: string) {
-    suggestTitle(question, { sessionId })
+    suggestTitle(question, { sessionId }, LANG_TO_API[lang])
       .then((title) =>
         setSessions((all) => all.map((s) => (s.id === sessionId && !s.renamed ? { ...s, title } : s)))
       )
@@ -150,7 +152,7 @@ export default function AccueilPage() {
     const sessionId = crypto.randomUUID();
     const session: ChatSession = {
       id: sessionId,
-      title: turn.question ? quickTitle(turn.question) : VOICE_TITLE,
+      title: turn.question ? quickTitle(turn.question) : uiText("voiceChatTitle", undefined, lang),
       createdAt: now,
       updatedAt: now,
       mode: turn.origin ?? "text",
@@ -374,7 +376,7 @@ export default function AccueilPage() {
     }
     if (isBusy) return;
     if (!isVoiceInputAvailable(LANG_TO_API[lang])) {
-      setVoiceNotice(VOICE_INPUT_UNAVAILABLE_MESSAGE);
+      setVoiceNotice(voiceInputUnavailableMessage());
       return;
     }
     setVoiceNotice(null);
@@ -385,7 +387,7 @@ export default function AccueilPage() {
     if (activeSession && activeSession.mode !== "voice") setSessionMode("voice");
     const id = crypto.randomUUID();
     // Discussion creee par cette question vocale : son titre provisoire
-    // (VOICE_TITLE) sera remplace des que la transcription arrive.
+    // (« Question vocale ») sera remplace des que la transcription arrive.
     const createsSession = !activeSession;
     const sessionId = startTurn({ id, question: "", status: "recording", origin: "voice" });
 
@@ -518,6 +520,8 @@ export default function AccueilPage() {
   }, []);
 
 
+  const t = (key: UiKey, vars?: Record<string, string | number>) => uiText(key, vars, lang);
+
   return (
     // `position: fixed` on purpose, not `h-screen`/`h-full`: this shell must
     // fill the whole viewport, header and composer never moving — only the
@@ -530,6 +534,7 @@ export default function AccueilPage() {
     // controlling where it sat. `position: fixed` has no such dependency:
     // its box is computed directly from the viewport via `inset`, not
     // from any ancestor's height at all.
+    <UiLangProvider value={lang}>
     <div className="accueil-shell fixed inset-0 z-20 flex flex-col overflow-hidden bg-white">
       <ChatHeader
         lang={lang}
@@ -643,7 +648,7 @@ export default function AccueilPage() {
                               controls
                               src={turn.audioUrl}
                               className="h-9 w-64 max-w-full rounded-full"
-                              aria-label="Votre enregistrement"
+                              aria-label={t("yourRecording")}
                             />
                           )}
 
@@ -657,7 +662,7 @@ export default function AccueilPage() {
                             </div>
                           ) : turn.status === "transcribing" ? (
                             <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
-                              Transcription en cours…
+                              {t("transcribing")}
                             </div>
                           ) : (
                             turn.question && (
@@ -699,7 +704,7 @@ export default function AccueilPage() {
 
                         {turn.status === "error" && (
                           <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                            <p>{turn.error}</p>
+                            <p>{turn.error === GENERIC_ERROR_MESSAGE ? t("genericError") : turn.error}</p>
                             {turn.question && (
                               <button
                                 type="button"
@@ -708,7 +713,7 @@ export default function AccueilPage() {
                                 className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50"
                               >
                                 <RotateCcw size={13} />
-                                Reposer la question
+                                {t("askAgain")}
                               </button>
                             )}
                           </div>
@@ -716,7 +721,10 @@ export default function AccueilPage() {
 
                         {turn.status === "done" && turn.response?.kind === "chat" && (
                           // Conversation courante (« Bonjour ! », « Avec plaisir ! ») : sans sources.
-                          <RichText text={turn.response.answer} className="font-serif text-[17px] leading-[1.7] text-slate-800" />
+                          <>
+                            <RichText text={turn.response.answer} className="font-serif text-[17px] leading-[1.7] text-slate-800" />
+                            <OriginalAnswer response={turn.response} />
+                          </>
                         )}
 
                         {turn.status === "done" && turn.response?.kind === "guide" && (
@@ -751,6 +759,7 @@ export default function AccueilPage() {
                               text={turn.response.answer}
                               className="font-serif text-[17px] leading-[1.7] text-slate-800"
                             />
+                            <OriginalAnswer response={turn.response} />
 
                             {/* Sources juste apres la reponse : un lien par page citee */}
                             <SourceLinks citations={turn.response.citations} />
@@ -764,7 +773,7 @@ export default function AccueilPage() {
                                 className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-100"
                               >
                                 <BookOpen size={16} />
-                                Explication détaillée
+                                {t("details")}
                               </button>
 
                               {/* « Réponse audio » : pour toutes les reponses, question ecrite ou vocale */}
@@ -774,7 +783,7 @@ export default function AccueilPage() {
                                   if (speaking?.turnId !== turn.id) trackEvent("listen", { sessionId: activeSession?.id });
                                   void handleListen(turn.id, turn.response!.answer, turn.response!.language as VoiceLanguage);
                                 }}
-                                aria-label="Écouter la réponse en audio"
+                                aria-label={t("listenLabel")}
                                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
                               >
                                 {(() => {
@@ -785,10 +794,10 @@ export default function AccueilPage() {
                                 })()}
                                 {(() => {
                                   const status = speaking?.turnId === turn.id ? speaking.status : null;
-                                  if (status === "loading") return "Préparation…";
-                                  if (status === "playing") return "Pause";
-                                  if (status === "paused") return "Reprendre";
-                                  return "Réponse audio";
+                                  if (status === "loading") return t("preparing");
+                                  if (status === "playing") return t("pause");
+                                  if (status === "paused") return t("resume");
+                                  return t("listen");
                                 })()}
                               </button>
 
@@ -828,7 +837,7 @@ export default function AccueilPage() {
                             onClick={cancelEdit}
                             className="shrink-0 rounded-md px-2 py-0.5 text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
                           >
-                            Annuler
+                            {t("cancel")}
                           </button>
                         </div>
                       )}
@@ -880,19 +889,21 @@ export default function AccueilPage() {
           element instead, since several of those can coexist on screen. */}
       <audio ref={audioElRef} hidden />
     </div>
+    </UiLangProvider>
   );
 }
 
 /** « Relancer » : obtenir une nouvelle reponse a la meme question (icone a
  * cote de la bulle de la question). */
 function RegenerateButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  const t = useUi();
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title="Relancer la question"
-      aria-label="Relancer la question pour obtenir une nouvelle réponse"
+      title={t("regenerate")}
+      aria-label={t("regenerateLabel")}
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40"
     >
       <RotateCcw size={15} />
@@ -906,7 +917,7 @@ function CopyButton({
   answer,
   citations,
   inlineSources,
-  label = "Copier",
+  label,
   small,
 }: {
   answer: string;
@@ -916,6 +927,7 @@ function CopyButton({
   label?: string;
   small?: boolean;
 }) {
+  const t = useUi();
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
 
   async function copy() {
@@ -932,7 +944,7 @@ function CopyButton({
     <button
       type="button"
       onClick={copy}
-      aria-label={label === "Copier" ? "Copier la réponse" : label}
+      aria-label={label ?? t("copyAnswer")}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border font-semibold transition-colors",
         small ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm",
@@ -942,7 +954,7 @@ function CopyButton({
       )}
     >
       {state === "copied" ? <Check size={small ? 14 : 16} /> : <Copy size={small ? 14 : 16} />}
-      <span aria-live="polite">{state === "copied" ? "Copié" : state === "error" ? "Échec de la copie" : label}</span>
+      <span aria-live="polite">{state === "copied" ? t("copied") : state === "error" ? t("copyFailed") : label ?? t("copy")}</span>
     </button>
   );
 }
@@ -966,6 +978,7 @@ function DetailsModal({
   onRetry: () => void;
   onClose: () => void;
 }) {
+  const t = useUi();
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -1001,13 +1014,13 @@ function DetailsModal({
       >
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-3.5 sm:px-6">
           <h2 id="details-title" className="text-base font-bold text-brand-900">
-            Explication détaillée
+            {t("details")}
           </h2>
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label={t("close")}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X size={18} />
@@ -1026,7 +1039,7 @@ function DetailsModal({
                 className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:text-brand-900"
               >
                 <RotateCcw size={13} />
-                Réessayer
+                {t("retry")}
               </button>
             </div>
           ) : (
@@ -1045,12 +1058,27 @@ function DetailsModal({
               answer={details!}
               citations={detailsSources ? [] : citations}
               inlineSources={detailsSources}
-              label="Copier l'explication"
+              label={t("copyDetails")}
               small
             />
           </div>
         )}
       </motion.div>
     </div>
+  );
+}
+
+/** Reponse traduite automatiquement en wolof : le texte francais d'origine, a deplier.
+ * Pas pour le pulaar : la reponse s'affiche seule (choix de presentation). */
+function OriginalAnswer({ response }: { response: QueryResponse }) {
+  const t = useUi();
+  if (!response.original_answer || response.language === "ff") return null;
+  return (
+    <details className="group text-sm text-slate-500">
+      <summary className="cursor-pointer select-none font-medium text-brand-700 hover:text-brand-900">
+        {t("originalFrench")}
+      </summary>
+      <RichText text={response.original_answer} className="mt-2 font-serif text-[15px] leading-[1.7] text-slate-600" />
+    </details>
   );
 }

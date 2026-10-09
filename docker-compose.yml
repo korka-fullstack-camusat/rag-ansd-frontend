@@ -1,6 +1,9 @@
 # Frontend seul :  docker compose up --build -d   (dans ce dossier)
 # Interface : http://localhost:3000 — le backend doit tourner sur NEXT_PUBLIC_API_URL.
 # Pour lancer backend + frontend ensemble, voir ../../docker-compose.yml
+# Nom de projet propre : evite toute confusion avec un autre projet dont le dossier s appelle aussi « frontend ».
+name: ansd-frontend
+
 services:
   frontend:
     build:

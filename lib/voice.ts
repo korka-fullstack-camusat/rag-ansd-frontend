@@ -15,7 +15,8 @@
  * transcript/answer are still pending.
  */
 
-import { ApiError, GENERIC_ERROR_MESSAGE, synthesizeSpeech, transcribeAudio, type Language } from "./api";
+import { ApiError, synthesizeSpeech, transcribeAudio, type Language } from "./api";
+import { uiText } from "./i18n";
 
 export type VoiceLanguage = Language;
 
@@ -83,8 +84,10 @@ export function isVoiceInputAvailable(language: VoiceLanguage): boolean {
 
 const BACKEND_ASR_LANGUAGES: VoiceLanguage[] = ["wo"];
 
-export const VOICE_INPUT_UNAVAILABLE_MESSAGE =
-  "La question à voix haute n'est pas encore disponible dans cette langue ou sur ce navigateur. Utilisez Chrome, Edge ou Safari, en français ou en anglais.";
+/** Message affiche quand la question a voix haute n'est pas possible (langue de l'interface). */
+export function voiceInputUnavailableMessage(): string {
+  return uiText("voiceInputUnavailable");
+}
 
 function captureWithBrowser(Ctor: new () => BrowserRecognition, bcp47: string, handlers: CaptureHandlers): CaptureController {
   const rec = new Ctor();
@@ -111,20 +114,20 @@ function captureWithBrowser(Ctor: new () => BrowserRecognition, bcp47: string, h
     failed = true;
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       handlers.onError(
-        "Accès au micro refusé. Autorisez le micro dans les réglages du navigateur pour poser votre question à voix haute."
+        uiText("micDenied")
       );
     } else if (e.error === "no-speech") {
-      handlers.onError("Aucune parole détectée — parlez plus près du micro et réessayez.");
+      handlers.onError(uiText("noSpeech"));
     } else if (e.error === "network") {
-      handlers.onError("La reconnaissance vocale nécessite une connexion Internet.");
+      handlers.onError(uiText("needInternet"));
     } else {
-      handlers.onError(GENERIC_ERROR_MESSAGE);
+      handlers.onError(uiText("genericError"));
     }
   };
   rec.onend = () => {
     if (!failed) {
       if (finalText.trim()) handlers.onResult(finalText.trim());
-      else handlers.onError("Aucune parole détectée — parlez plus près du micro et réessayez.");
+      else handlers.onError(uiText("noSpeech"));
     }
     handlers.onEnd();
   };
@@ -156,7 +159,7 @@ export async function captureVoice(
   }
 
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    handlers.onError("Le micro n'est pas accessible depuis ce navigateur.");
+    handlers.onError(uiText("micUnavailable"));
     handlers.onEnd();
     return null;
   }
@@ -165,7 +168,7 @@ export async function captureVoice(
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
     handlers.onError(
-      "Accès au micro refusé. Autorisez le micro dans les réglages du navigateur pour utiliser la dictée vocale."
+      uiText("micDenied")
     );
     handlers.onEnd();
     return null;
@@ -181,7 +184,7 @@ export async function captureVoice(
     stream.getTracks().forEach((track) => track.stop());
     const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
     if (blob.size === 0) {
-      handlers.onError("Aucun son enregistré — réessayez.");
+      handlers.onError(uiText("noSound"));
       handlers.onEnd();
       return;
     }
@@ -190,12 +193,12 @@ export async function captureVoice(
       try {
         const text = await transcribeAudio(blob, language);
         if (!text.trim()) {
-          handlers.onError("Aucune parole détectée — parlez plus près du micro et réessayez.");
+          handlers.onError(uiText("noSpeech"));
         } else {
           handlers.onResult(text.trim());
         }
       } catch (err) {
-        handlers.onError(err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE);
+        handlers.onError(err instanceof ApiError ? err.message : uiText("genericError"));
       } finally {
         handlers.onEnd();
       }
@@ -238,8 +241,7 @@ function plainText(text: string): string {
  * sereer ou le diola. */
 const BROWSER_VOICE_LANG: Partial<Record<VoiceLanguage, string>> = { fr: "fr-FR", en: "en-US" };
 
-export const VOICE_UNAVAILABLE_MESSAGE =
-  "La lecture audio n'est pas encore disponible dans cette langue.";
+
 
 /** Lecture par la synthese vocale du navigateur (speechSynthesis), utilisee
  * quand le backend ne fournit pas de voix. Renvoie null si la langue n'a
@@ -259,7 +261,7 @@ function speakWithBrowser(text: string, language: VoiceLanguage, handlers: Speak
   utterance.rate = 1;
   utterance.onend = () => handlers.onEnd();
   utterance.onerror = (e) => {
-    if (e.error !== "canceled" && e.error !== "interrupted") handlers.onError(GENERIC_ERROR_MESSAGE);
+    if (e.error !== "canceled" && e.error !== "interrupted") handlers.onError(uiText("genericError"));
     handlers.onEnd();
   };
   synth.speak(utterance);
@@ -283,7 +285,7 @@ export async function speakText(
   handlers: SpeakHandlers
 ): Promise<SpeechController | null> {
   try {
-    if (!audioEl) throw new ApiError(GENERIC_ERROR_MESSAGE);
+    if (!audioEl) throw new ApiError(uiText("genericError"));
     const blob = await synthesizeSpeech(plainText(text), language);
     const url = URL.createObjectURL(blob);
     audioEl.src = url;
@@ -302,13 +304,16 @@ export async function speakText(
         URL.revokeObjectURL(url);
       },
     };
-  } catch {
+  } catch (err) {
     const controller = speakWithBrowser(text, language, handlers);
     if (controller) {
       handlers.onStart?.();
       return controller;
     }
-    handlers.onError(VOICE_UNAVAILABLE_MESSAGE);
+    // Langue sans voix (501) : message general ; sinon la vraie raison donnee par le serveur
+    // (ex. limite quotidienne du service vocal wolof atteinte).
+    const serverMessage = err instanceof ApiError && err.status !== 501 && err.status !== undefined ? err.message : null;
+    handlers.onError(serverMessage ?? uiText("playbackUnavailable"));
     handlers.onEnd();
     return null;
   }

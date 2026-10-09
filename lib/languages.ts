@@ -3,9 +3,9 @@ import type { Language } from "./api";
 /** Langues proposees dans l'interface, dans l'ordre d'affichage du menu. */
 export type Lang = "FR" | "WO" | "EN" | "FF" | "SRR" | "DYO";
 
-// Langues proposees : le pulaar, le sereer et le diola ne sont plus offerts (le type `Lang`
+// Langues proposees : le sereer et le diola ne sont pas offerts (le type `Lang`
 // les garde pour ne pas casser les donnees deja enregistrees).
-export const LANGS: Lang[] = ["FR", "WO", "EN"];
+export const LANGS: Lang[] = ["FR", "WO", "FF", "EN"];
 
 /** Nom affiche dans le selecteur. */
 export const LANG_LABELS: Record<Lang, string> = {
@@ -37,7 +37,7 @@ export const NEW_CHAT_PROMPT: Record<Lang, string | null> = {
   FR: "Que voulez-vous savoir ?",
   EN: "What would you like to know?",
   WO: "Lan nga bëgg xam ?",
-  FF: null,
+  FF: "Ko a yiɗi anndude ?",
   SRR: null,
   DYO: null,
 };
@@ -68,7 +68,7 @@ const FR_WELCOME: Welcome = {
   ],
   intro: {
     before: "Posez votre question en ",
-    languages: "français, wolof ou anglais",
+    languages: "français, wolof, pulaar ou anglais",
     after: ". Chaque chiffre vient d’une publication officielle de l’ANSD, citée avec sa page.",
   },
   pickLanguage: "Choisissez votre langue",
@@ -89,7 +89,7 @@ export const WELCOME: Record<Lang, Welcome | null> = {
     ],
     intro: {
       before: "Ask your question in ",
-      languages: "French, Wolof or English",
+      languages: "French, Wolof, Pulaar or English",
       after: ". Every figure comes from an official ANSD publication, cited with its page.",
     },
     pickLanguage: "Choose your language",
@@ -102,13 +102,26 @@ export const WELCOME: Record<Lang, Welcome | null> = {
     ],
     intro: {
       before: "Laajal sa laaj ci ",
-      languages: "farañse, wolof walla àngale",
+      languages: "farañse, wolof, pulaar walla àngale",
       after: ". Lim yu nekk ci publikaasioŋ bu ANSD la bawoo, te ñu tudd ko ak xët mi.",
     },
     pickLanguage: "Tànnal sa làkk",
     placeholder: "Laajal ab laaj…",
   },
-  FF: null,
+  // Pulaar : premiere version, a faire valider par un locuteur.
+  FF: {
+    hero: [
+      [{ text: "Senegaal" }, { text: "e" }, { text: "limooje,", highlight: true }],
+      [{ text: "e" }, { text: "dow" }, { text: "ko" }, { text: "naamndaa." }],
+    ],
+    intro: {
+      before: "Naamndu naamndal maa e ",
+      languages: "farayse, wolof, pulaar walla engele",
+      after: ". Kala limooru ummorii ko e bayyinaango laawɗungo ANSD, tawi kelle mum ina kolliraa.",
+    },
+    pickLanguage: "Suɓo ɗemngal maa",
+    placeholder: "Naamndu naamndal…",
+  },
   SRR: null,
   DYO: null,
 };

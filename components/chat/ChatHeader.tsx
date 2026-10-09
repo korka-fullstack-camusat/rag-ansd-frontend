@@ -1,5 +1,6 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import Image from "next/image";
 import { motion } from "motion/react";
 import { PanelLeft, ShieldCheck, SquarePen } from "lucide-react";
@@ -36,6 +37,7 @@ export function ChatHeader({
    * discussion » suffit, celui de l'en-tete est alors masque a partir de md. */
   sidebarOpen?: boolean;
 }) {
+  const t = useUi();
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-900/5 bg-white/70 px-4 backdrop-blur-xl sm:gap-3 sm:px-10">
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -43,8 +45,8 @@ export function ChatHeader({
           <button
             type="button"
             onClick={onToggleSidebar}
-            aria-label="Afficher ou masquer l'historique des discussions"
-            title="Historique des discussions"
+            aria-label={t("toggleHistory")}
+            title={t("history")}
             className="-ml-1.5 flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-700"
           >
             <PanelLeft size={19} />
@@ -61,7 +63,7 @@ export function ChatHeader({
         <div className="hidden h-8 w-px shrink-0 bg-slate-200 md:block" />
         <div className="hidden flex-col leading-tight md:flex">
           <span className="text-base font-extrabold text-brand-900">XAMXAM</span>
-          <span className="text-[11px] font-medium text-slate-500">Statistiques — ANSD</span>
+          <span className="text-[11px] font-medium text-slate-500">{t("tagline")}</span>
         </div>
       </div>
 
@@ -80,7 +82,7 @@ export function ChatHeader({
           className="flex min-w-0 items-center gap-1.5 text-sm font-bold tracking-tight text-brand-700 sm:gap-2 sm:text-lg md:pointer-events-auto"
         >
           <ShieldCheck className="hidden h-5 w-5 shrink-0 text-brand-500 sm:block" />
-          <span className="truncate">Assistant de l&rsquo;ANSD</span>
+          <span className="truncate">{t("assistant")}</span>
         </motion.div>
       </div>
 
@@ -92,15 +94,15 @@ export function ChatHeader({
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={onNewChat}
-            aria-label="Nouvelle discussion"
-            title="Nouvelle discussion"
+            aria-label={t("newChat")}
+            title={t("newChat")}
             className={cn(
               "flex h-9 w-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white text-xs font-semibold text-brand-800 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 sm:h-10 sm:w-10 lg:w-auto lg:px-3.5",
               sidebarOpen && "md:hidden"
             )}
           >
             <SquarePen size={15} className="shrink-0" />
-            <span className="hidden lg:inline">Nouvelle discussion</span>
+            <span className="hidden lg:inline">{t("newChat")}</span>
           </motion.button>
         )}
         {showLanguage && <LanguageSelect value={lang} onChange={onLangChange} />}

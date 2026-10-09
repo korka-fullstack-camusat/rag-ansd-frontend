@@ -1,5 +1,6 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import { useLayoutEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { ArrowUp, Mic, Square } from "lucide-react";
@@ -41,6 +42,7 @@ export function Composer({
   autoFocus?: boolean;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
 }) {
+  const t = useUi();
   const isHero = variant === "hero";
   const localRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? localRef;
@@ -87,7 +89,7 @@ export function Composer({
               submit();
             }
           }}
-          placeholder={listening ? "Je vous écoute…" : placeholder}
+          placeholder={listening ? t("listening") : placeholder}
           aria-label={placeholder}
           autoFocus={autoFocus}
           disabled={disabled}
@@ -99,7 +101,7 @@ export function Composer({
 
         <button
           type="button"
-          aria-label={listening ? "Arrêter la dictée" : "Dicter la question au microphone"}
+          aria-label={listening ? t("stopDictation") : t("dictate")}
           aria-pressed={listening}
           onClick={onMicClick}
           disabled={disabled && !listening}
@@ -116,7 +118,7 @@ export function Composer({
 
         <motion.button
           type="button"
-          aria-label="Envoyer la question"
+          aria-label={t("send")}
           disabled={disabled || !value.trim()}
           whileHover={disabled || !value.trim() ? undefined : { scale: 1.05 }}
           whileTap={disabled || !value.trim() ? undefined : { scale: 0.95 }}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronDown, Globe2 } from "lucide-react";
@@ -14,6 +15,7 @@ import { LANGS, LANG_LABELS, type Lang } from "@/lib/languages";
  * statiques) le choix reste purement local.
  */
 export function LanguageSelect({ value, onChange }: { value: Lang; onChange?: (lang: Lang) => void }) {
+  const t = useUi();
   const [localValue, setLocalValue] = useState(value);
   const current = onChange ? value : localValue;
   const [open, setOpen] = useState(false);
@@ -61,7 +63,7 @@ export function LanguageSelect({ value, onChange }: { value: Lang; onChange?: (l
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
-        aria-label={`Langue : ${LANG_LABELS[current]}`}
+        aria-label={`${t("language")} : ${LANG_LABELS[current]}`}
         onClick={() => setOpen((o) => !o)}
         className="flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white pl-2.5 pr-2 text-xs font-semibold text-brand-800 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50 sm:h-10 sm:gap-2 sm:pl-3.5 sm:pr-3 sm:text-sm"
       >
@@ -77,7 +79,7 @@ export function LanguageSelect({ value, onChange }: { value: Lang; onChange?: (l
             id={listId}
             role="listbox"
             tabIndex={-1}
-            aria-label="Choisir la langue"
+            aria-label={t("chooseLanguage")}
             aria-activedescendant={`${listId}-${LANGS[active]}`}
             onKeyDown={onListKeyDown}
             initial={{ opacity: 0, y: -4, scale: 0.98 }}

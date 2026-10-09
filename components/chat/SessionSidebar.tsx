@@ -1,5 +1,6 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MessageSquare, Pencil, Search, SquarePen, Trash2, X } from "lucide-react";
@@ -17,6 +18,7 @@ interface SidebarProps {
 
 /** Champ de renommage en place : Entree ou clic ailleurs = valider, Echap = annuler. */
 function RenameInput({ initial, onDone }: { initial: string; onDone: (title: string | null) => void }) {
+  const t = useUi();
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
@@ -43,7 +45,7 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (title: str
         if (e.key === "Escape") finish(null);
       }}
       onBlur={() => finish(value)}
-      aria-label="Nouveau titre de la discussion"
+      aria-label={t("newTitle")}
       className="w-full rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-semibold text-brand-900 shadow-sm outline-none ring-2 ring-brand-100"
     />
   );
@@ -58,9 +60,12 @@ function SidebarContent({
   onRename,
   onClose,
 }: SidebarProps & { onClose?: () => void }) {
+  const t = useUi();
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const groups = groupSessions(sessions.filter((s) => sessionMatches(s, query)));
+  const groups = groupSessions(sessions.filter((s) => sessionMatches(s, query)), Date.now(), {
+    today: t("today"), yesterday: t("yesterday"), last7Days: t("last7Days"), older: t("older"),
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -71,13 +76,13 @@ function SidebarContent({
           className="flex h-10 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-brand-800 shadow-sm transition-colors hover:border-brand-300 hover:bg-brand-50"
         >
           <SquarePen size={16} className="shrink-0 text-brand-600" />
-          Nouvelle discussion
+          {t("newChat")}
         </button>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fermer l'historique"
+            aria-label={t("closeHistory")}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-200/60 hover:text-slate-800"
           >
             <X size={18} />
@@ -93,15 +98,15 @@ function SidebarContent({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-            placeholder="Rechercher une discussion"
-            aria-label="Rechercher dans l'historique des discussions"
+            placeholder={t("searchChats")}
+            aria-label={t("searchChats")}
             className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
-              aria-label="Effacer la recherche"
+              aria-label={t("clearSearch")}
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
             >
               <X size={13} />
@@ -110,10 +115,10 @@ function SidebarContent({
         </div>
       </div>
 
-      <nav aria-label="Historique des discussions" className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <nav aria-label={t("history")} className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         {groups.length === 0 && (
           <p className="px-3 py-6 text-center text-sm text-slate-400">
-            Aucune discussion ne correspond à « {query.trim()} ».
+            {t("noMatch", { query: query.trim() })}
           </p>
         )}
         {groups.map((group) => (
@@ -144,7 +149,7 @@ function SidebarContent({
                       onClick={() => onSelect(s.id)}
                       onDoubleClick={() => setEditingId(s.id)}
                       aria-current={active ? "page" : undefined}
-                      title={`${s.title} — double-clic pour renommer`}
+                      title={t("renameHint", { title: s.title })}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-16 text-left text-sm transition-colors",
                         active
@@ -159,8 +164,8 @@ function SidebarContent({
                       <button
                         type="button"
                         onClick={() => setEditingId(s.id)}
-                        aria-label={`Renommer la discussion « ${s.title} »`}
-                        title="Renommer"
+                        aria-label={t("renameChat", { title: s.title })}
+                        title={t("rename")}
                         className={cn(
                           "flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-brand-700 focus-visible:opacity-100",
                           actionVisibility
@@ -171,10 +176,10 @@ function SidebarContent({
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`Supprimer la discussion « ${s.title} » ?`)) onDelete(s.id);
+                          if (window.confirm(t("confirmDelete", { title: s.title }))) onDelete(s.id);
                         }}
-                        aria-label={`Supprimer la discussion « ${s.title} »`}
-                        title="Supprimer"
+                        aria-label={t("deleteChat", { title: s.title })}
+                        title={t("delete")}
                         className={cn(
                           "flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white hover:text-red-600 focus-visible:opacity-100",
                           actionVisibility

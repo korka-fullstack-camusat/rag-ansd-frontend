@@ -48,6 +48,8 @@ export interface QueryResponse {
   usage: Usage;
   /** Reponses « guide » : publications recommandees, referencees [[n]] dans le texte. */
   sources?: DetailSource[];
+  /** Langues traduites automatiquement (wolof, pulaar) : la reponse francaise d origine. */
+  original_answer?: string | null;
 }
 
 export interface SourceDocument {
@@ -315,11 +317,12 @@ export function trackEvent(event: "details_open" | "listen", ctx?: UsageContext)
 
 /** Titre court (1 a 3 mots) d'une discussion, genere par le backend pour
  * l'historique — ex. « Espérance de vie ». */
-export async function suggestTitle(question: string, ctx?: UsageContext): Promise<string> {
+/** Titre court de la discussion, dans la langue de l'interface (historique). */
+export async function suggestTitle(question: string, ctx?: UsageContext, language: Language = "fr"): Promise<string> {
   const res = await fetch(`${API_BASE_URL}/api/title`, {
     method: "POST",
     headers: jsonHeaders(ctx),
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, language }),
   });
   if (!res.ok) {
     throw new ApiError(await readErrorDetail(res), res.status);

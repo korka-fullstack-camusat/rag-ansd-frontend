@@ -1,13 +1,15 @@
 "use client";
 
+import { useUi } from "@/lib/i18n";
 import { motion } from "motion/react";
 
 export function TypingIndicator() {
+  const t = useUi();
   return (
     <div
       className="flex items-center gap-1.5 py-1"
       role="status"
-      aria-label="Recherche en cours dans les publications ANSD"
+      aria-label={t("searching")}
     >
       {[0, 1, 2].map((i) => (
         <motion.span
