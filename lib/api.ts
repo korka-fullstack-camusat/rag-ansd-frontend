@@ -182,6 +182,100 @@ export async function askQuestion(
   return res.json();
 }
 
+/** Rappels pendant une reponse en flux : texte recu jusqu'ici (marqueurs [n] compris),
+ * puis etape en cours (« search » : recherche dans les publications). */
+export interface StreamHandlers {
+  onText?: (text: string) => void;
+  onStatus?: (status: string) => void;
+}
+
+/** Retire les references [n] du texte en cours de reception, y compris une reference
+ * coupee en fin de morceau (« [1 »). Les sources s'affichent a part, une fois la reponse finie. */
+export function stripStreamMarkers(text: string): string {
+  return text
+    .replace(/\s*\[(?:Sources?\s*)?\d+(?:\s*[,;]\s*\d+)*\]/gi, "")
+    .replace(/\s*\[(?:S[a-z]*\s*)?[\d,; ]*$/i, "")
+    .replace(/[ \t]+([,.;:!?])/g, "$1");
+}
+
+/** Meme question que `askQuestion`, mais la reponse s'affiche au fil de l'eau (route
+ * /api/query/stream, une ligne JSON par evenement). Repli sur `askQuestion` si le flux
+ * n'est pas disponible (ancien backend). */
+export async function askQuestionStream(
+  question: string,
+  language: Language,
+  ctx: UsageContext | undefined,
+  history: HistoryTurn[] | undefined,
+  handlers: StreamHandlers = {}
+): Promise<QueryResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/query/stream`, {
+      method: "POST",
+      headers: jsonHeaders(ctx),
+      body: JSON.stringify({
+        question,
+        language,
+        mode: ctx?.mode ?? "text",
+        history: history ?? [],
+        regenerate: ctx?.regenerate ?? false,
+      }),
+    });
+  } catch {
+    throw new ApiError(GENERIC_ERROR_MESSAGE);
+  }
+  if (res.status === 404 || res.status === 405) return askQuestion(question, language, ctx, history);
+  if (!res.ok) throw new ApiError(await readErrorDetail(res), res.status);
+  if (!res.body) return askQuestion(question, language, ctx, history);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  const handle = (line: string): QueryResponse | undefined => {
+    if (!line.trim()) return undefined;
+    let event: { type: string; text?: string; response?: QueryResponse; detail?: string };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return undefined;
+    }
+    if (event.type === "delta" && event.text) {
+      text += event.text;
+      handlers.onText?.(text);
+    } else if (event.type === "reset") {
+      text = "";
+      handlers.onText?.("");
+    } else if (event.type === "status" && event.text) {
+      handlers.onStatus?.(event.text);
+    } else if (event.type === "error") {
+      throw new ApiError(event.detail || GENERIC_ERROR_MESSAGE);
+    } else if (event.type === "done" && event.response) {
+      return event.response;
+    }
+    return undefined;
+  };
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const response = handle(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        if (response) return response;
+      }
+      if (done) break;
+    }
+    const last = handle(buffer);
+    if (last) return last;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(GENERIC_ERROR_MESSAGE);
+  }
+  throw new ApiError(GENERIC_ERROR_MESSAGE);
+}
+
 /** Explication detaillee d'une reponse deja donnee (bouton « Voir plus »),
  * generee a la demande par le backend a partir des memes documents. */
 export async function explainAnswer(

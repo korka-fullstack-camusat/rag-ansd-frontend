@@ -32,6 +32,9 @@ export interface Turn {
   /** Sources citees dans le texte de l'explication (references [[n]]). */
   detailsSources?: DetailSource[];
   error?: string;
+  /** Texte de la reponse en cours de reception (flux), affiche avant la reponse finale.
+   * Vide une fois la reponse arrivee. */
+  streamText?: string;
   /** Vrai si la reponse a ete interrompue (page quittee pendant l'attente) :
    * l'interface propose alors de reposer la question. */
   interrupted?: boolean;

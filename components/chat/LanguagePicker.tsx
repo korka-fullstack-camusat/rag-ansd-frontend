@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { Globe2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LANGS, LANG_LABELS, type Lang } from "@/lib/languages";
+import { LANGS, LANG_LABELS, welcome, type Lang } from "@/lib/languages";
 
 /**
  * Choix de la langue au centre de l'ecran d'accueil : toutes les langues sont
@@ -28,7 +28,7 @@ export function LanguagePicker({
     >
       <p className="flex items-center gap-2 text-sm font-semibold text-brand-800">
         <Globe2 size={17} className="text-brand-500" />
-        Choisissez votre langue
+        {welcome(value).pickLanguage}
       </p>
       <div role="radiogroup" aria-label="Langue" className="flex flex-wrap justify-center gap-2.5">
         {LANGS.map((code) => {

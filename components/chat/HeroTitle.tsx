@@ -1,19 +1,16 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
+import { welcome, type Lang } from "@/lib/languages";
 
 /**
  * Titre d'accueil, revele mot par mot a l'arrivee sur la page (montee +
  * flou qui se dissipe), puis « en chiffres » garde un reflet degrade qui
- * glisse lentement. Desactive si l'utilisateur a demande a reduire les
+ * glisse lentement, et un reflet clair traverse le reste du titre. Desactive si l'utilisateur a demande a reduire les
  * animations.
  */
-const LINES: { text: string; highlight?: boolean }[][] = [
-  [{ text: "Le" }, { text: "Sénégal" }, { text: "en chiffres,", highlight: true }],
-  [{ text: "à" }, { text: "portée" }, { text: "de" }, { text: "question." }],
-];
-
-export function HeroTitle() {
+export function HeroTitle({ lang = "FR" }: { lang?: Lang }) {
+  const LINES = welcome(lang).hero;
   const reduceMotion = useReducedMotion();
   let index = 0;
 
@@ -39,8 +36,24 @@ export function HeroTitle() {
                   >
                     {word.text}
                   </motion.span>
-                ) : (
+                ) : reduceMotion ? (
                   word.text
+                ) : (
+                  // Meme bleu qu'avant ; seul un reflet clair passe de temps en temps (decale mot
+                  // a mot : il traverse tout le titre de gauche a droite).
+                  <motion.span
+                    className="bg-clip-text text-transparent"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(100deg, var(--color-brand-900) 40%, var(--color-brand-300) 50%, var(--color-brand-900) 60%)",
+                      backgroundSize: "300% 100%",
+                    }}
+                    initial={{ backgroundPosition: "100% 50%" }}
+                    animate={{ backgroundPosition: ["100% 50%", "0% 50%"] }}
+                    transition={{ duration: 1.6, ease: "easeInOut", repeat: Infinity, repeatDelay: 3.4, delay: delay + 1 }}
+                  >
+                    {word.text}
+                  </motion.span>
                 )}
                 {" "}
               </motion.span>

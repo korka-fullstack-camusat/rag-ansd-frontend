@@ -14,10 +14,11 @@ import { cn } from "@/lib/utils";
 import { copyAnswer } from "@/lib/copy";
 import { SessionSidebar } from "@/components/chat/SessionSidebar";
 import { VoiceButton } from "@/components/chat/VoiceButton";
-import { LANG_TO_API, loadPreferredLang, newChatPrompt, savePreferredLang, type Lang } from "@/lib/languages";
+import { LANG_TO_API, loadPreferredLang, newChatPrompt, savePreferredLang, welcome, type Lang } from "@/lib/languages";
 import {
   ApiError,
-  askQuestion,
+  askQuestionStream,
+  stripStreamMarkers,
   explainAnswer,
   trackEvent,
   sourcesOf,
@@ -203,14 +204,28 @@ export default function AccueilPage() {
     origin: ChatMode = "text",
     regenerate = false
   ) {
+    // Texte recu en flux : affiche au plus toutes les 60 ms (chaque mise a jour redessine la page).
+    let pendingText: string | null = null;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      flushTimer = null;
+      if (pendingText !== null) patchTurn(sessionId, turnId, { streamText: pendingText });
+    };
     try {
-      const response = await askQuestion(
+      const response = await askQuestionStream(
         question,
         LANG_TO_API[lang],
         { sessionId, mode: origin, regenerate },
-        historyFor(sessionId, turnId)
+        historyFor(sessionId, turnId),
+        {
+          onText: (text) => {
+            pendingText = text;
+            if (!flushTimer) flushTimer = setTimeout(flush, 60);
+          },
+        }
       );
-      patchTurn(sessionId, turnId, { status: "done", response });
+      if (flushTimer) clearTimeout(flushTimer);
+      patchTurn(sessionId, turnId, { status: "done", response, streamText: undefined });
       // Discussion ouverte par « Bonjour » : le titre vient de la premiere vraie question.
       if (response.kind !== "chat" && isFirstRealQuestion(sessionId, turnId)) {
         setSessions((all) =>
@@ -221,8 +236,10 @@ export default function AccueilPage() {
       if (origin === "voice") void handleListen(turnId, response.answer, response.language as VoiceLanguage);
       if (response.answered) void loadDetails(sessionId, turnId, question, response);
     } catch (err) {
+      if (flushTimer) clearTimeout(flushTimer);
       patchTurn(sessionId, turnId, {
         status: "error",
+        streamText: undefined,
         error: err instanceof ApiError ? err.message : GENERIC_ERROR_MESSAGE,
       });
     }
@@ -547,22 +564,13 @@ export default function AccueilPage() {
             // haut du titre sur petit ecran) ; `my-auto` sur le contenu le garde
             // centre verticalement quand la place suffit.
             <div className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 py-8 sm:px-6 sm:py-10">
-              {/* Fond dégradé décoratif — hors scope du brief institutionnel, assumé ici */}
-              {/* Dans leur propre cadre `overflow-hidden` : debordant de la zone,
-                  ils l'elargissaient sinon, et la mise au point d'un champ la
-                  faisait defiler horizontalement (contenu decale a gauche). */}
-              <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-                <div className="absolute -top-32 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-brand-200/50 via-brand-100/40 to-transparent blur-3xl" />
-                <div className="absolute -bottom-40 -right-24 h-80 w-80 rounded-full bg-brand-100/60 blur-3xl" />
-              </div>
-
               <div className="relative z-10 my-auto flex w-full max-w-2xl flex-col items-center gap-6 text-center">
                 {/* Grand accueil (titre, presentation, choix du mode) : premiere
                     visite uniquement. Ensuite, une nouvelle discussion s'ouvre sur
                     un ecran epure — l'utilisateur connait deja l'assistant. */}
                 {firstVisit ? (
                   <>
-                  <HeroTitle />
+                  <HeroTitle key={lang} lang={lang} />
 
                   <motion.p
                     initial={{ opacity: 0, y: 10 }}
@@ -570,11 +578,11 @@ export default function AccueilPage() {
                     transition={{ delay: 0.6 }}
                     className="max-w-xl font-serif text-base leading-relaxed text-slate-500 sm:text-lg"
                   >
-                    Posez votre question en{" "}
+                    {welcome(lang).intro.before}
                     <span className="font-sans font-semibold text-brand-700">
-                      français, wolof ou anglais
+                      {welcome(lang).intro.languages}
                     </span>
-                    . Chaque chiffre vient d&rsquo;une publication officielle de l&rsquo;ANSD, citée avec sa page.
+                    {welcome(lang).intro.after}
                   </motion.p>
 
                   </>
@@ -600,7 +608,7 @@ export default function AccueilPage() {
                 >
                   <Composer
                     variant="hero"
-                    placeholder="Posez une question…"
+                    placeholder={welcome(lang).placeholder}
                     value={input}
                     onChange={setInput}
                     onSubmit={() => handleAsk(input)}
@@ -678,7 +686,16 @@ export default function AccueilPage() {
                         transition={{ delay: 0.08 }}
                         className="flex flex-col gap-4"
                       >
-                        {turn.status === "loading" && <TypingIndicator />}
+                        {turn.status === "loading" &&
+                          (turn.streamText && stripStreamMarkers(turn.streamText).trim() ? (
+                            // Reponse en cours de reception : le texte s'affiche au fil de l'eau.
+                            <RichText
+                              text={stripStreamMarkers(turn.streamText)}
+                              className="font-serif text-[17px] leading-[1.7] text-slate-800"
+                            />
+                          ) : (
+                            <TypingIndicator />
+                          ))}
 
                         {turn.status === "error" && (
                           <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
@@ -817,7 +834,7 @@ export default function AccueilPage() {
                       )}
                       <Composer
                         variant="footer"
-                        placeholder="Posez une question…"
+                        placeholder={welcome(lang).placeholder}
                         value={input}
                         onChange={setInput}
                         onSubmit={() => (editingTurn ? submitEdit() : handleAsk(input))}
