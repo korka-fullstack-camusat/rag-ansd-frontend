@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { ArrowUp, Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,9 +36,21 @@ export function Composer({
   onMicClick: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
-  inputRef?: React.Ref<HTMLInputElement>;
+  inputRef?: React.RefObject<HTMLTextAreaElement>;
 }) {
   const isHero = variant === "hero";
+  const localRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = inputRef ?? localRef;
+
+  // La zone grandit avec le texte (Maj + Entree = nouvelle ligne), jusqu'a
+  // environ 6 lignes, puis defile.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.overflowY = el.scrollHeight > 160 ? "auto" : "hidden";
+  }, [value, textareaRef]);
 
   function submit() {
     if (!disabled && value.trim()) onSubmit();
@@ -50,17 +63,18 @@ export function Composer({
           here — see handleMicClick in app/accueil/page.tsx. */}
       <div
         className={cn(
-          "flex w-full items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl transition-shadow focus-within:border-brand-300 focus-within:shadow-glow",
+          "flex w-full items-end gap-2 rounded-2xl border border-slate-200/80 bg-white/80 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-xl transition-shadow focus-within:border-brand-300 focus-within:shadow-glow",
           isHero ? "p-2 pl-4 sm:p-2.5 sm:pl-5" : "p-1.5 pl-4"
         )}
       >
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={textareaRef}
+          rows={1}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // Entree envoie ; Maj + Entree passe a la ligne.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
             }
@@ -70,7 +84,7 @@ export function Composer({
           autoFocus={autoFocus}
           disabled={disabled}
           className={cn(
-            "min-w-0 flex-1 bg-transparent font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:opacity-60",
+            "min-w-0 flex-1 resize-none self-center bg-transparent py-1.5 font-medium leading-6 text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:opacity-60",
             isHero ? "text-base" : "text-sm"
           )}
         />

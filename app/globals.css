@@ -123,6 +123,7 @@ button {
 /* The composer's own focus-within glow (see components/chat/Composer.tsx)
    already signals focus on the input itself — a second outline box directly
    on top of it read as a stray, unstyled "cadre" rather than a focus ring. */
-.accueil-shell input:focus-visible {
+.accueil-shell input:focus-visible,
+.accueil-shell textarea:focus-visible {
   outline: none;
 }

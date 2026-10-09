@@ -61,7 +61,7 @@ export default function AccueilPage() {
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
-  const heroInputRef = useRef<HTMLInputElement>(null);
+  const heroInputRef = useRef<HTMLTextAreaElement>(null);
   // « Voir plus » : echanges deplies, en cours de chargement, ou en erreur.
   // Le texte detaille lui-meme est stocke dans l'echange (turn.details).
   // Echange dont l'explication detaillee est ouverte dans la fenetre « Voir plus ».
@@ -612,7 +612,7 @@ export default function AccueilPage() {
                           ) : (
                             turn.question && (
                               <div className="flex items-center gap-2">
-                                <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
+                                <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 whitespace-pre-wrap break-words text-sm font-medium text-white shadow-glow">
                                   {turn.question}
                                 </div>
                                 {/* « Relancer » a droite de la question (reponse deja recue, hors « Bonjour »…) */}
