@@ -653,7 +653,7 @@ export default function AccueilPage() {
                           )}
 
                           {turn.status === "recording" ? (
-                            <div className="flex items-center gap-2 rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
+                            <div className="flex items-center gap-2 rounded-2xl rounded-br-md bg-brand-900 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
                               <span className="relative flex h-2 w-2 shrink-0">
                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
@@ -661,7 +661,7 @@ export default function AccueilPage() {
                               {turn.question ? <span className="italic">{turn.question}</span> : "Je vous écoute…"}
                             </div>
                           ) : turn.status === "transcribing" ? (
-                            <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
+                            <div className="rounded-2xl rounded-br-md bg-brand-900 px-4 py-2.5 text-sm font-medium text-white shadow-glow">
                               {t("transcribing")}
                             </div>
                           ) : (
@@ -669,7 +669,7 @@ export default function AccueilPage() {
                               <div className="flex items-center gap-2">
                                 <div
                                   className={cn(
-                                    "rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 whitespace-pre-wrap break-words text-sm font-medium text-white shadow-glow transition-opacity",
+                                    "rounded-2xl rounded-br-md bg-brand-900 px-4 py-2.5 whitespace-pre-wrap break-words text-sm font-medium text-white shadow-glow transition-opacity",
                                     editingTurnId === turn.id && "opacity-60 ring-2 ring-brand-300 ring-offset-2"
                                   )}
                                 >

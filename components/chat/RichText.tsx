@@ -16,6 +16,10 @@ const SOURCE_REF = /\s*[[(]\s*Sources?\s*\d+[^\])]*[\])]/gi;
 const BULLET = /^\s*[-*•]\s+/;
 const NUMBERED = /^\s*\d+[.)]\s+/;
 const HEADING = /^\s*#{1,6}\s+/;
+// Ligne de separation Markdown (« --- », « *** », « ___ ») : ignoree.
+const HORIZONTAL_RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+// Citation (« > … ») : le texte est garde, le chevron retire.
+const QUOTE = /^\s*>\s?/;
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
 const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 
@@ -55,6 +59,7 @@ function SourceRefLink({ src }: { src: DetailSource }) {
 
 function renderInline(text: string, keyPrefix: string, refs?: Map<number, DetailSource>): ReactNode[] {
   return text
+    .replace(/\*{3,}/g, "**") // « ****titre**** » (titre deja en gras) -> gras simple
     .split(/(\*\*[^*]+\*\*|\[\[\d+\]\])/g)
     .filter(Boolean)
     .map((part, i) => {
@@ -69,11 +74,13 @@ function renderInline(text: string, keyPrefix: string, refs?: Map<number, Detail
           {part.slice(2, -2)}
         </strong>
       ) : (
-        // Marqueurs isoles restants (`*`, `__`) : on les retire simplement.
+        // Marqueurs isoles restants (`*`, `__`, code `…`, liens [texte](adresse)) : on garde le texte.
         part
+          .replace(/\[([^\]]+)\]\((?:https?:\/\/|\/)[^)]*\)/g, "$1")
+          .replace(/`+/g, "")
           .replace(/\*\*|__/g, "")
-          .replace(/(^|\s)\*(\S)/g, "$1$2")
-          .replace(/(\S)\*(\s|$)/g, "$1$2")
+          .replace(/(^|\s)[*_](\S)/g, "$1$2")
+          .replace(/(\S)[*_](\s|[.,;:!?]|$)/g, "$1$2")
       );
     });
 }
@@ -89,8 +96,13 @@ export type Block =
 export function parse(text: string): Block[] {
   const blocks: Block[] = [];
   for (const raw of text.replace(SOURCE_REF, "").split("\n")) {
-    const line = raw.trimEnd();
     const last = blocks[blocks.length - 1];
+    const isTableSeparator = last?.kind === "table" && TABLE_SEPARATOR.test(raw);
+    if (HORIZONTAL_RULE.test(raw) && !isTableSeparator) {
+      blocks.push({ kind: "p", lines: [] }); // une separation vaut une fin de paragraphe
+      continue;
+    }
+    const line = raw.replace(QUOTE, "").trimEnd();
     if (!line.trim()) {
       blocks.push({ kind: "p", lines: [] });
     } else if (TABLE_ROW.test(line) || (last?.kind === "table" && TABLE_SEPARATOR.test(line))) {
