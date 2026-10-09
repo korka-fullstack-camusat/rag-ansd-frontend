@@ -21,6 +21,7 @@ export function Composer({
   value,
   onChange,
   onSubmit,
+  onCancel,
   listening,
   onMicClick,
   disabled = false,
@@ -32,6 +33,8 @@ export function Composer({
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  /** Echap : abandonne la saisie en cours (question relancee). */
+  onCancel?: () => void;
   listening: boolean;
   onMicClick: () => void;
   disabled?: boolean;
@@ -73,6 +76,11 @@ export function Composer({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && onCancel) {
+              e.preventDefault();
+              onCancel();
+              return;
+            }
             // Entree envoie ; Maj + Entree passe a la ligne.
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();

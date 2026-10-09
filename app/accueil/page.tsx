@@ -62,6 +62,10 @@ export default function AccueilPage() {
   const [listening, setListening] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const heroInputRef = useRef<HTMLTextAreaElement>(null);
+  const footerInputRef = useRef<HTMLTextAreaElement>(null);
+  // « Relancer » : question remise dans le champ de saisie pour etre completee
+  // ou modifiee avant d'etre reposee (a la meme place dans la discussion).
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
   // « Voir plus » : echanges deplies, en cours de chargement, ou en erreur.
   // Le texte detaille lui-meme est stocke dans l'echange (turn.details).
   // Echange dont l'explication detaillee est ouverte dans la fenetre « Voir plus ».
@@ -93,6 +97,17 @@ export default function AccueilPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [turns]);
+
+  const editingTurn = editingTurnId ? turns.find((t) => t.id === editingTurnId) : undefined;
+
+  // Changer de discussion abandonne la question en cours de modification.
+  const editingRef = useRef(editingTurnId);
+  editingRef.current = editingTurnId;
+  useEffect(() => {
+    if (!editingRef.current) return;
+    setEditingTurnId(null);
+    setInput("");
+  }, [activeId]);
 
   const isBusy =
     listening || turns.some((t) => t.status === "loading" || t.status === "recording" || t.status === "transcribing");
@@ -273,23 +288,50 @@ export default function AccueilPage() {
     void runQuery(activeSession.id, turn.id, turn.question, turn.origin ?? "text");
   }
 
-  /** « Relancer » : repose la meme question pour obtenir une nouvelle reponse
-   * (le backend ignore alors son cache), au meme endroit de la discussion. */
+  /** « Relancer » : remet la question dans le champ de saisie, ou l'on peut
+   * la completer avant de la reposer (Entree) — ou annuler (Echap). */
   function handleRegenerate(turn: Turn) {
     if (!activeSession || isBusy || !turn.question) return;
+    if (activeSession.mode === "voice") setSessionMode("text");
+    setEditingTurnId(turn.id);
+    setInput(turn.question);
+    requestAnimationFrame(() => {
+      const el = footerInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
+  function cancelEdit() {
+    setEditingTurnId(null);
+    setInput("");
+  }
+
+  /** Repose la question relancee (eventuellement modifiee) pour obtenir une
+   * nouvelle reponse, au meme endroit de la discussion. Inchangee, le backend
+   * ignore son cache pour proposer une autre reponse. */
+  function submitEdit() {
+    const turn = turns.find((t) => t.id === editingTurnId);
+    const question = input.trim();
+    setEditingTurnId(null);
+    if (!activeSession || isBusy || !turn || !question) return;
+    setInput("");
     if (speaking?.turnId === turn.id) {
       speechControllerRef.current?.cancel();
       setSpeaking(null);
     }
     setDetailsFor((id) => (id === turn.id ? null : id));
     patchTurn(activeSession.id, turn.id, {
+      question,
       status: "loading",
       response: undefined,
       details: undefined,
+      detailsSources: undefined,
       error: undefined,
       interrupted: false,
     });
-    void runQuery(activeSession.id, turn.id, turn.question, turn.origin ?? "text", true);
+    void runQuery(activeSession.id, turn.id, question, turn.origin ?? "text", question === turn.question);
   }
 
   /** Change le mode de la discussion affichee (« Écrire plutôt » / micro). */
@@ -612,7 +654,12 @@ export default function AccueilPage() {
                           ) : (
                             turn.question && (
                               <div className="flex items-center gap-2">
-                                <div className="rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 whitespace-pre-wrap break-words text-sm font-medium text-white shadow-glow">
+                                <div
+                                  className={cn(
+                                    "rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500 to-brand-700 px-4 py-2.5 whitespace-pre-wrap break-words text-sm font-medium text-white shadow-glow transition-opacity",
+                                    editingTurnId === turn.id && "opacity-60 ring-2 ring-brand-300 ring-offset-2"
+                                  )}
+                                >
                                   {turn.question}
                                 </div>
                                 {/* « Relancer » a droite de la question (reponse deja recue, hors « Bonjour »…) */}
@@ -735,12 +782,29 @@ export default function AccueilPage() {
                     />
                   ) : (
                     <>
+                      {editingTurn && (
+                        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-brand-100 bg-brand-50/70 px-3 py-1.5 text-xs font-medium text-brand-800">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <RotateCcw size={13} className="shrink-0" />
+                            <span className="truncate">Complétez ou modifiez la question, puis validez pour relancer</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            className="shrink-0 rounded-md px-2 py-0.5 text-slate-500 transition-colors hover:bg-white hover:text-slate-800"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      )}
                       <Composer
                         variant="footer"
                         placeholder="Posez une question…"
                         value={input}
                         onChange={setInput}
-                        onSubmit={() => handleAsk(input)}
+                        onSubmit={() => (editingTurn ? submitEdit() : handleAsk(input))}
+                        onCancel={editingTurn ? cancelEdit : undefined}
+                        inputRef={footerInputRef}
                         listening={listening}
                         onMicClick={handleMicClick}
                         disabled={isBusy}
