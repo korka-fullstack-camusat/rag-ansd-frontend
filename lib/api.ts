@@ -206,7 +206,7 @@ export async function explainAnswer(
 }
 
 /** Signale un clic utile au tableau de bord admin (« Voir plus » deplie,
- * « Écouter »). Sans effet visible : un echec est simplement ignore. */
+ * « Réponse audio »). Sans effet visible : un echec est simplement ignore. */
 export function trackEvent(event: "details_open" | "listen", ctx?: UsageContext): void {
   void fetch(`${API_BASE_URL}/api/track`, {
     method: "POST",

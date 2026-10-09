@@ -547,7 +547,7 @@ function SectionContent({
               <Meter value={k.questions ? 100 - k.voice_share : 0} label="Part des questions écrites" />
             </Stat>
             <Stat label="Explications ouvertes" value={fmt.format(k.details_opened)} hint={`${k.details_rate.toLocaleString("fr-FR")} % des réponses`} />
-            <Stat label="Écoutes" value={fmt.format(k.listens)} hint="clics sur « Écouter » (hors lecture automatique)" />
+            <Stat label="Écoutes" value={fmt.format(k.listens)} hint="clics sur « Réponse audio » (hors lecture automatique)" />
           </section>
           <Card>
             <CardTitle title="Langues utilisées" />

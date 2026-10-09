@@ -18,7 +18,7 @@ export interface AdminKpis {
   cache_rate: number;
   details_opened: number;
   details_rate: number;
-  /** Clics sur « Écouter » (hors lecture automatique des questions vocales). */
+  /** Clics sur « Réponse audio » (hors lecture automatique des questions vocales). */
   listens: number;
   errors: number;
   error_rate: number;

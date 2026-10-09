@@ -180,7 +180,7 @@ export default function AccueilPage() {
 
   /** `origin` : une question posee a voix haute recoit une reponse lue
    * automatiquement ; une question ecrite, une reponse ecrite (avec le
-   * bouton « Écouter »). */
+   * bouton « Réponse audio »). */
   async function runQuery(
     sessionId: string,
     turnId: string,
@@ -685,15 +685,14 @@ export default function AccueilPage() {
                                 Explication détaillée
                               </button>
 
-                              {/* « Écouter » : seulement en mode vocal, pas quand on a choisi d'écrire */}
-                              {activeSession?.mode === "voice" && (
+                              {/* « Réponse audio » : pour toutes les reponses, question ecrite ou vocale */}
                               <button
                                 type="button"
                                 onClick={() => {
                                   if (speaking?.turnId !== turn.id) trackEvent("listen", { sessionId: activeSession?.id });
                                   void handleListen(turn.id, turn.response!.answer, turn.response!.language as VoiceLanguage);
                                 }}
-                                aria-label="Écouter la réponse"
+                                aria-label="Écouter la réponse en audio"
                                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
                               >
                                 {(() => {
@@ -707,10 +706,9 @@ export default function AccueilPage() {
                                   if (status === "loading") return "Préparation…";
                                   if (status === "playing") return "Pause";
                                   if (status === "paused") return "Reprendre";
-                                  return "Écouter";
+                                  return "Réponse audio";
                                 })()}
                               </button>
-                              )}
 
                               <CopyButton answer={turn.response.answer} citations={turn.response.citations} />
                             </div>
