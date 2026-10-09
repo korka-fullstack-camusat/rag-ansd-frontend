@@ -698,8 +698,8 @@ export default function AccueilPage() {
                         )}
 
                         {turn.status === "done" && turn.response?.kind === "chat" && (
-                          // Conversation courante (« Bonjour ! », « Avec plaisir ! ») : texte simple.
-                          <p className="font-serif text-[17px] leading-[1.7] text-slate-800">{turn.response.answer}</p>
+                          // Conversation courante (« Bonjour ! ») ou conseils d'utilisation (listes) : sans sources.
+                          <RichText text={turn.response.answer} className="font-serif text-[17px] leading-[1.7] text-slate-800" />
                         )}
 
                         {turn.status === "done" && turn.response && !turn.response.answered && turn.response.kind !== "chat" && (
