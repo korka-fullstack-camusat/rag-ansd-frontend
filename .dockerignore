@@ -6,3 +6,5 @@ npm-debug.log*
 .env*.local
 Dockerfile
 .dockerignore
+tests
+vitest.config.mts

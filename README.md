@@ -146,6 +146,20 @@ npm run dev
 `lib/api.ts` is the typed client for the backend — its shapes mirror
 `../backend/app/schemas.py` exactly; if that changes, update both.
 
+## Tests
+
+```bash
+npm test             # unitaires + integration (Vitest, ~1 s)
+npm run test:watch   # relance a chaque modification
+```
+
+- `tests/unit/` : historique des discussions, mise en forme des reponses, langues, client de l'API
+  (requetes, erreurs, reponse en flux), copie.
+- `tests/integration/` : champ de saisie (Entree, Maj + Entree, Echap) et parcours complet de la page
+  de l'assistant avec un backend simule (question, sources, Relancer modifiable, guide, erreurs,
+  rechargement).
+- Bout en bout contre la plateforme lancee : `./run_tests.sh e2e` dans le backend.
+
 ## Next steps if this becomes the real product
 
 - Add EHCVM (and the other brief-named sources) to the backend corpus, then
