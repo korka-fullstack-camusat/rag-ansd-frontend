@@ -698,11 +698,29 @@ export default function AccueilPage() {
                         )}
 
                         {turn.status === "done" && turn.response?.kind === "chat" && (
-                          // Conversation courante (« Bonjour ! ») ou conseils d'utilisation (listes) : sans sources.
+                          // Conversation courante (« Bonjour ! », « Avec plaisir ! ») : sans sources.
                           <RichText text={turn.response.answer} className="font-serif text-[17px] leading-[1.7] text-slate-800" />
                         )}
 
-                        {turn.status === "done" && turn.response && !turn.response.answered && turn.response.kind !== "chat" && (
+                        {turn.status === "done" && turn.response?.kind === "guide" && (
+                          // Conseils / etapes : chaque publication recommandee est un lien vers son document.
+                          <>
+                            <RichText
+                              text={turn.response.answer}
+                              sources={turn.response.sources}
+                              className="font-serif text-[17px] leading-[1.7] text-slate-800"
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <CopyButton
+                                answer={turn.response.answer}
+                                citations={[]}
+                                inlineSources={turn.response.sources}
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {turn.status === "done" && turn.response && !turn.response.answered && turn.response.kind !== "chat" && turn.response.kind !== "guide" && (
                           // Donnees non couvertes par les publications indexees : un message simple, rien d'autre.
                           <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] leading-relaxed text-slate-600">
                             <Info size={18} className="mt-0.5 shrink-0 text-slate-400" />

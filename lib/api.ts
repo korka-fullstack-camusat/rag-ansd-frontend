@@ -36,8 +36,9 @@ export interface QueryResponse {
    * « et en 2024 ? » → « Quelle est la croissance du PIB en 2024 ? »). */
   standalone_question?: string | null;
   /** answer : reponse tiree des publications ; no_data : rien dans le corpus ;
-   * chat : conversation courante (« bonjour », « merci »…). */
-  kind?: "answer" | "no_data" | "chat";
+   * chat : conversation courante (« bonjour », « merci »…) ; guide : conseils et
+   * etapes pour mener ses recherches, avec un lien vers chaque publication recommandee. */
+  kind?: "answer" | "no_data" | "chat" | "guide";
   language: string;
   answered: boolean;
   answer: string;
@@ -45,6 +46,8 @@ export interface QueryResponse {
   sources_used: string[];
   model: string;
   usage: Usage;
+  /** Reponses « guide » : publications recommandees, referencees [[n]] dans le texte. */
+  sources?: DetailSource[];
 }
 
 export interface SourceDocument {
